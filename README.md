@@ -394,7 +394,7 @@ Inco is self-hosting — it uses `@inco:` directives in its own source code. Sin
 `_ = var` is the **acknowledgement pattern** — you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." When a variable is only used in a directive, `_ = var` makes the intent clear:
 
 ```go
-_ = err // @if: err != nil, -panic(err)
+_ = err // @inco: err == nil, -panic(err)
 ```
 
 `_ = err` acknowledges the variable in source; the directive generates the real guard in the overlay. The code compiles cleanly with or without inco.
@@ -418,11 +418,11 @@ If the expression is too long or complex, extract it into a boolean variable fir
 
 ```go
 // ❌ Verbose and hard to read
-// @if: si.ParentStateInfo != nil && si.ParentStateInfo != parentStateInfo, -panic(...)
+// @inco: !(si.ParentStateInfo != nil && si.ParentStateInfo != parentStateInfo), -panic(...)
 
 // ✅ Clear
 isInvalid := si.ParentStateInfo != nil && si.ParentStateInfo != parentStateInfo
-_ = isInvalid // @if: isInvalid, -panic(...)
+_ = isInvalid // @inco: !isInvalid, -panic(...)
 ```
 
 ### 2. Repeated Var Assignment for Multiple Guards
@@ -431,9 +431,56 @@ When applying multiple directives to the same variable consecutively (e.g., log 
 
 ```go
 // ✅ Best practice: explicitly suppress unused checks for each line
-_ = err // @if: err != nil, -log("error occurred:", err)
-_ = err // @if: err != nil, -panic(err)
+_ = err // @inco: err == nil, -log("error occurred:", err)
+_ = err // @inco: err == nil, -panic(err)
 ```
+
+### 3. `@inco:` at Function Head, `@if:` in Flow — Prefer Logic Separation
+
+**Function entry** — always use `@inco:` (contracts):
+
+```go
+func Process(db *sql.DB, id string) error {
+    // @inco: db != nil, -panic("db required")
+    // @inco: id != "", -return(fmt.Errorf("empty id"))
+    ...
+}
+```
+
+**Mid-flow guards** — `@if:` is acceptable for inline guard clauses:
+
+```go
+result, err := doWork()
+_ = err // @if: err != nil, -return(nil, err)
+```
+
+**Better: extract logic into a function, then use `@inco:` at entry**:
+
+```go
+// ❌ Inline @if: scattered in flow
+func Run() error {
+    data, err := fetch()
+    _ = err // @if: err != nil, -return(err)
+    parsed, err := parse(data)
+    _ = err // @if: err != nil, -return(err)
+    ...
+}
+
+// ✅ Extract + @inco: at each function head
+func Run() error {
+    data := mustFetch()    // panics on error via @inco:
+    parsed := mustParse(data)
+    ...
+}
+
+func mustFetch() []byte {
+    data, err := fetch()
+    _ = err // @inco: err == nil, -panic(err)
+    return data
+}
+```
+
+The goal: push guard logic to function boundaries so the caller stays clean and every function opens with clear contracts.
 
 ## License
 

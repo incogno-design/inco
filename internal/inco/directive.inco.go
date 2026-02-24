@@ -38,11 +38,8 @@ var actionFromName = map[string]ActionKind{
 // ParseDirective extracts a Directive from a comment string.
 // Returns nil when the comment is not a valid directive.
 //
-// Syntax:
-//
-//	prefix: <expr>[, -action[(args...)]]
-//
-// where prefix is @inco or @if.
+// Recognized prefixes: @inco: (contract) and @if: (guard).
+// Full syntax: <prefix>: <expr>[, -action[(args...)]]
 func ParseDirective(comment string) *Directive {
 	body := stripComment(comment)
 	// @inco: body != "", -return(nil)
@@ -79,9 +76,7 @@ func stripComment(s string) string {
 	m := commentRe.FindStringSubmatch(s)
 	// @inco: m != nil, -return("")
 	// m[1] is // content, m[2] is /* */ content; one will be empty.
-	if m[1] != "" {
-		return m[1]
-	}
+	// @inco: m[1] == "", -return(m[1])
 	return m[2]
 }
 

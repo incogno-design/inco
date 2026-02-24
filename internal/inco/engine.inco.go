@@ -136,9 +136,8 @@ func (e *Engine) Run() error {
 	}
 	wg.Wait()
 
-	if v := workerErr.Load(); v != nil {
-		return v.(error)
-	}
+	v := workerErr.Load()
+	_ = v // @inco: v == nil, -return(v.(error))
 
 	return e.commitResults(results, oldOverlay)
 }
@@ -194,8 +193,12 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 	// @inco: path != "", -panic("generateShadow: empty path")
 	// @inco: f != nil, -panic("generateShadow: nil AST")
 	// 1. Collect directive lines from AST comments.
+	//    Skip doc comments (attached to declarations) — they may contain
+	//    directive-like syntax in documentation examples.
+	docGroups := collectDocCommentGroups(f)
 	directives := make(map[int]*Directive) // 1-based line → Directive
 	for _, cg := range f.Comments {
+		_ = docGroups // @inco: !docGroups[cg], -continue
 		for _, c := range cg.List {
 			d := ParseDirective(c.Text)
 			_ = d // @inco: d != nil, -continue
@@ -318,9 +321,7 @@ func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int, lo
 func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName string) string {
 	switch d.Action {
 	case ActionReturn:
-		if len(d.ActionArgs) > 0 {
-			return "return " + strings.Join(d.ActionArgs, ", ")
-		}
+		// @inco: len(d.ActionArgs) == 0, -return("return " + strings.Join(d.ActionArgs, ", "))
 		return "return"
 	case ActionContinue:
 		return "continue"
@@ -331,9 +332,7 @@ func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName 
 	case ActionLog:
 		return logPkgName + ".Println(" + strings.Join(d.ActionArgs, ", ") + ")"
 	default: // ActionPanic
-		if len(d.ActionArgs) > 0 {
-			return "panic(" + d.ActionArgs[0] + ")"
-		}
+		// @inco: len(d.ActionArgs) == 0, -return("panic(" + d.ActionArgs[0] + ")")
 		relPath := path
 		if rel, err := filepath.Rel(e.Root, path); err == nil {
 			relPath = rel
@@ -698,14 +697,49 @@ func collectDeclaredNames(f *ast.File) map[string]bool {
 
 // collectFieldNames adds all named fields from a field list to the set.
 func collectFieldNames(fl *ast.FieldList, names map[string]bool) {
-	if fl == nil {
-		return
-	}
+	// @inco: fl != nil, -return
 	for _, field := range fl.List {
 		for _, id := range field.Names {
 			names[id.Name] = true
 		}
 	}
+}
+
+// collectDocCommentGroups returns the set of comment groups that are attached
+// to declarations as documentation. These must be skipped when scanning for
+// directives, because doc comments may contain directive-like syntax in
+// examples without intending them to be expanded.
+func collectDocCommentGroups(f *ast.File) map[*ast.CommentGroup]bool {
+	groups := make(map[*ast.CommentGroup]bool)
+	if f.Doc != nil {
+		groups[f.Doc] = true
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.GenDecl:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.TypeSpec:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.Field:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.ValueSpec:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		}
+		return true
+	})
+	return groups
 }
 
 // collectStmtLines walks the AST and returns a set of line numbers that

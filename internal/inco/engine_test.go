@@ -1064,6 +1064,129 @@ func Do(x int) {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
+// Doc comments should NOT produce guards
+// ---------------------------------------------------------------------------
+
+func TestEngine_FuncDocCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+// Do processes x.
+//
+// @inco: x > 0
+func Do(x int) {
+	_ = x
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "!(x > 0)") || strings.Contains(shadow, "panic(") {
+		t.Errorf("func doc comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_FuncDocCommentIgnored_IndentedSyntax(t *testing.T) {
+	// Go doc uses tab-indented lines for code examples in doc comments.
+	// These must not be parsed as directives.
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+// Parse extracts a directive from a comment.
+//
+// Syntax: @inco: <expr>[, -action]
+//
+//	@if: <expr>[, -action]
+func Parse(s string) {
+	_ = s
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "if <expr>") || strings.Contains(shadow, "panic(") {
+		t.Errorf("indented doc comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_TypeDocCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+// Config holds settings.
+//
+// @inco: Name != ""
+type Config struct {
+	Name string
+}
+
+func main() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "panic(") {
+		t.Errorf("type doc comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_PackageDocCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `// Package main demonstrates inco.
+//
+// @inco: always true
+package main
+
+func main() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "panic(") {
+		t.Errorf("package doc comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_DocCommentSkipped_ButBodyDirectiveWorks(t *testing.T) {
+	// Doc comment with directive-like text should be skipped,
+	// but real directives inside the function body must still work.
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+// Do checks x.
+//
+// @inco: x > 0
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	// Should have exactly one guard (from body), not two.
+	count := strings.Count(shadow, "!(x > 0)")
+	if count != 1 {
+		t.Errorf("expected 1 guard (body only, not doc), got %d:\n%s", count, shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Interface method comments should NOT produce guards
 // ---------------------------------------------------------------------------
 
