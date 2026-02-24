@@ -68,6 +68,12 @@ func (db *DB) Query(q string) (string, error) { return "", nil }
 	if result.TotalDirectives != 2 {
 		t.Errorf("TotalDirectives = %d, want 2", result.TotalDirectives)
 	}
+	if result.TotalInco != 2 {
+		t.Errorf("TotalInco = %d, want 2", result.TotalInco)
+	}
+	if result.TotalIfDir != 0 {
+		t.Errorf("TotalIfDir = %d, want 0", result.TotalIfDir)
+	}
 	if result.TotalIfs != 2 { // x>10, y<0
 		t.Errorf("TotalIfs = %d, want 2", result.TotalIfs)
 	}
@@ -270,6 +276,8 @@ func TestAudit_PrintReport(t *testing.T) {
 		TotalIfs:        10,
 		TotalRequires:   4,
 		TotalDirectives: 4,
+		TotalInco:       3,
+		TotalIfDir:      1,
 		Files: []FileAudit{
 			{RelPath: "a.go", RequireCount: 3, IfCount: 6,
 				Funcs: []FuncAudit{{Name: "A", Line: 3, RequireCount: 2}, {Name: "B", Line: 8, RequireCount: 1}}},
@@ -288,7 +296,8 @@ func TestAudit_PrintReport(t *testing.T) {
 		"3 / 5",
 		"60.0%",
 		"Directive vs if:",
-		"@inco:",
+		"@inco::             3",
+		"@if::               1",
 		"Total directives:",
 		"Native if stmts:",
 		"inco/(if+inco):",
@@ -301,6 +310,99 @@ func TestAudit_PrintReport(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q\n\nFull output:\n%s", want, out)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// @inco: vs @if: separate counting
+// ---------------------------------------------------------------------------
+
+func TestAudit_IncoVsIfCounts(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "main.go"), `package main
+
+import "fmt"
+
+func Process(x int, name string) error {
+	// @inco: x > 0
+	// @inco: name != "", -panic("name required")
+	if x > 100 {
+		fmt.Println("big")
+	}
+	return nil
+}
+
+func Handle(err error) {
+	_ = err // @if: err != nil, -return
+}
+
+func Filter(items []int) {
+	for _, v := range items {
+		_ = v // @if: v < 0, -continue
+		_ = v // @inco: v < 1000, -break
+		fmt.Println(v)
+	}
+}
+`)
+
+	result, err := Audit(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 3 @inco: (x > 0, name != "", v < 1000) + 2 @if: (err != nil, v < 0) = 5 total
+	if result.TotalRequires != 5 {
+		t.Errorf("TotalRequires = %d, want 5", result.TotalRequires)
+	}
+	if result.TotalInco != 3 {
+		t.Errorf("TotalInco = %d, want 3", result.TotalInco)
+	}
+	if result.TotalIfDir != 2 {
+		t.Errorf("TotalIfDir = %d, want 2", result.TotalIfDir)
+	}
+	if result.TotalDirectives != 5 {
+		t.Errorf("TotalDirectives = %d, want 5", result.TotalDirectives)
+	}
+
+	// Per-file counts
+	if len(result.Files) != 1 {
+		t.Fatalf("TotalFiles = %d, want 1", len(result.Files))
+	}
+	f := result.Files[0]
+	if f.IncoCount != 3 {
+		t.Errorf("file IncoCount = %d, want 3", f.IncoCount)
+	}
+	if f.IfDirCount != 2 {
+		t.Errorf("file IfDirCount = %d, want 2", f.IfDirCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// @inco: only — @if: count should be zero
+// ---------------------------------------------------------------------------
+
+func TestAudit_IncoOnly_IfDirZero(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "main.go"), `package main
+
+func Check(x int, y int) {
+	// @inco: x > 0
+	// @inco: y >= 0, -panic("y negative")
+}
+`)
+
+	result, err := Audit(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.TotalInco != 2 {
+		t.Errorf("TotalInco = %d, want 2", result.TotalInco)
+	}
+	if result.TotalIfDir != 0 {
+		t.Errorf("TotalIfDir = %d, want 0", result.TotalIfDir)
 	}
 }
 
