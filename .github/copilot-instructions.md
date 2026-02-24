@@ -162,14 +162,14 @@ The remaining `if` statements should all be genuine business logic.
 
 ## Best Practices & Common Pitfalls
 
-### 1. Eliminating Unused Variables
-If a variable (e.g., `err`) is only used within an `@inco:` directive (which gets compiled into a guard, potentially leaving the variable "unused" in the original code), use `_ = var` to suppress the compile error:
+### 1. The Acknowledgement Pattern
+`_ = var` is not a workaround — it is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." This is the canonical way to bind a variable to an inline directive:
 
 ```go
-// ❌ Wrong: err unused
+// ❌ Wrong: err unused — compiler doesn't see the guard
 // @inco: err == nil, -panic(err)
 
-// ✅ Correct
+// ✅ Correct: acknowledge err, attach the guard
 _ = err // @inco: err == nil, -panic(err)
 ```
 

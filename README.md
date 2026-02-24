@@ -321,15 +321,15 @@ internal/inco/      Core engine:
 
 Inco is self-hosting — it uses `@inco:` directives in its own source code. Since directives are plain Go comments, the code compiles with or without expansion.
 
-### Inline directives solve the unused-variable problem
+### The Acknowledgement Pattern
 
-When a variable is only used in a directive, Go complains about an unused variable. The solution:
+`_ = var` is the **acknowledgement pattern** — you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." When a variable is only used in a directive, `_ = var` makes the intent clear:
 
 ```go
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-`_ = err` satisfies the compiler when building without inco, while `// @inco:` generates the real guard in the overlay.
+`_ = err` acknowledges the variable in source; `// @inco:` generates the real guard in the overlay. The code compiles cleanly with or without inco.
 
 ## Design
 
@@ -344,15 +344,15 @@ _ = err // @inco: err == nil, -panic(err)
 
 ## Best Practices & Common Pitfalls
 
-### 1. Eliminating Unused Variables
+### 1. The Acknowledgement Pattern
 
-If a variable (e.g., `err`) is only used within an `@inco:` directive — which compiles into a guard in the shadow, leaving the variable "unused" in the original code — use `_ = var` to suppress the compile error:
+`_ = var` is not a workaround — it is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." This is the canonical way to bind a variable to an inline directive:
 
 ```go
-// ❌ Wrong: err unused
+// ❌ Wrong: err unused — compiler doesn't see the guard
 // @inco: err == nil, -panic(err)
 
-// ✅ Correct
+// ✅ Correct: acknowledge err, attach the guard
 _ = err // @inco: err == nil, -panic(err)
 ```
 
