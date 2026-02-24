@@ -86,6 +86,7 @@ The following paths are always skipped regardless of `.incoignore` configuration
 4. Use `-continue` or `-break` for filtering conditions in loops
 5. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
 6. **Always use the acknowledgement pattern** (`_ = var`) when a variable is only referenced inside an inline directive — this is not a workaround but the idiomatic way to bind variables to inco guards. Omitting it causes compiler errors for unused variables
+7. **After editing code, always run `go vet ./...`** to ensure there are no unused variables or other issues. Do not leave any unused variable warnings unresolved
 
 ### if → @inco: Conversion Templates
 
