@@ -396,19 +396,7 @@ _ = err // @inco: err == nil, -panic(err)
 
 ## Best Practices & Common Pitfalls
 
-### 1. The Acknowledgement Pattern
-
-`_ = var` is not a workaround — it is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." This is the canonical way to bind a variable to an inline directive:
-
-```go
-// ❌ Wrong: err unused — compiler doesn't see the guard
-// @inco: err == nil, -panic(err)
-
-// ✅ Correct: acknowledge err, attach the guard
-_ = err // @inco: err == nil, -panic(err)
-```
-
-### 2. Long Expression Optimization
+### 1. Long Expression Optimization
 
 If the expression in `@inco:` is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
 
@@ -421,7 +409,7 @@ isParentValid := si.ParentStateInfo == nil || si.ParentStateInfo == parentStateI
 _ = isParentValid // @inco: isParentValid, -panic(...)
 ```
 
-### 3. Repeated Var Assignment for Multiple Guards
+### 2. Repeated Var Assignment for Multiple Guards
 
 When applying multiple inco directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line:
 
@@ -429,20 +417,6 @@ When applying multiple inco directives to the same variable consecutively (e.g.,
 // ✅ Best practice: explicitly suppress unused checks for each line
 _ = err // @inco: err == nil, -log("error occurred:", err)
 _ = err // @inco: err == nil, -panic(err)
-```
-
-### 4. Guards vs Business Logic
-
-Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".
-
-```go
-// ✅ Guard → @inco:
-// @inco: db != nil
-// @inco: err == nil, -panic(err)
-
-// ✅ Logic → if (do NOT convert these)
-if val < lo { return lo }
-if cmd == "build" { runBuild() }
 ```
 
 ## License

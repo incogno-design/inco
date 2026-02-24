@@ -9,7 +9,9 @@ Inco is a compile-time assertion engine for Go. Write `// @inco:` directives in 
 ### 1. `@inco:` is for Guards, Not Logic
 
 **Use `@inco:`**: nil checks, error checks, range validation, preconditions  
-**Use `if`**: business branches, conditional selection, flow control
+**Use `if`**: business branches, conditional selection, flow control  
+
+Note: `inco audit` ratio is not a "higher is better" metric — do not force-convert business logic `if` statements into `@inco:` just to inflate the ratio.
 
 ```go
 // ✅ Guard → @inco:
@@ -80,13 +82,13 @@ The following paths are always skipped regardless of `.incoignore` configuration
 
 ### Writing New Code
 
-1. Use `// @inco:` for defensive checks, not `if`
-2. Prefer inline form for error handling: `_ = err // @inco: err == nil, -panic(err)`
-3. Use standalone form for parameter validation at function entry: `// @inco: root != ""`
-4. Use `-continue` or `-break` for filtering conditions in loops
-5. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
-6. **Always use the acknowledgement pattern** (`_ = var`) when a variable is only referenced inside an inline directive — this is not a workaround but the idiomatic way to bind variables to inco guards. Omitting it causes compiler errors for unused variables
-7. **After editing code, always run `go vet ./...`** to ensure there are no unused variables or other issues. Do not leave any unused variable warnings unresolved
+1. Use standalone form when the variable is used later; use inline acknowledgement (`_ = err // @inco: err == nil, -panic(err)`) only when `err` is not referenced elsewhere
+2. Use standalone form for parameter validation at function entry: `// @inco: root != ""`
+3. Use `-continue` or `-break` for filtering conditions in loops
+4. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
+5. **After editing code, always run `go vet ./...`** to ensure there are no unused variables or other issues. Do not leave any unused variable warnings unresolved
+6. **Do not overthink** — never repeatedly second-guess, self-doubt, or over-verify the same issue. Make a decision, apply it, and move on
+7. **Review `if` as guard clause first** — when encountering an `if` statement, first consider whether it can be expressed as a guard clause (early return, panic, continue, break). If yes, convert it to `// @inco:` instead of keeping the manual `if`
 
 ### if → @inco: Conversion Templates
 
@@ -103,13 +105,17 @@ if x == nil { panic("x is nil") }
 
 // Before:
 if !valid { continue }
-// After:
+// After (if valid is NOT used later):
 _ = valid // @inco: valid, -continue
+// After (if valid IS used later — prefer standalone):
+// @inco: valid, -continue
 
 // Before:
 if n == target { break }
-// After:
+// After (if n is NOT used later):
 _ = n // @inco: n != target, -break
+// After (if n IS used later — prefer standalone):
+// @inco: n != target, -break
 ```
 
 ### Do NOT Convert These `if` Statements
@@ -145,18 +151,7 @@ For single-repo projects, develop on the `inco` branch (with `.inco.go` sources)
 
 ## Best Practices & Common Pitfalls
 
-### 1. The Acknowledgement Pattern
-`_ = var` is not a workaround — it is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." This is the canonical way to bind a variable to an inline directive:
-
-```go
-// ❌ Wrong: err unused — compiler doesn't see the guard
-// @inco: err == nil, -panic(err)
-
-// ✅ Correct: acknowledge err, attach the guard
-_ = err // @inco: err == nil, -panic(err)
-```
-
-### 2. Long Expression Optimization
+### 1. Long Expression Optimization
 If the expression in `@inco:` is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
 
 ```go
@@ -168,7 +163,7 @@ isParentValid := si.ParentStateInfo == nil || si.ParentStateInfo == parentStateI
 _ = isParentValid // @inco: isParentValid, -panic(...)
 ```
 
-### 3. Repeated Var Assignment for Multiple Guards
+### 2. Repeated Var Assignment for Multiple Guards
 When applying multiple inco directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line.
 
 ```go
@@ -177,7 +172,7 @@ _ = err // @inco: err == nil, -log("error occurred:", err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 4. Group Declarations and Directives
+### 3. Group Declarations and Directives
 Keep variable declarations together, and group `@inco:` directives together. Mixing them makes code harder to scan. A clean visual separation between "setup" and "guards" improves readability.
 
 **Crucial**: When grouping, use **unique variable names** (e.g., `errA`, `errB`) instead of reusing `err`. Reusing `err` across grouped declarations often leads to "declared and not used" errors or accidental shadowing.
@@ -199,10 +194,7 @@ _ = errB // @inco: errB == nil, -panic(errB)
 
 **Dependency Exception**: If a later call depends on an earlier guard (e.g., `b` requires `a` to be valid), **do not group them**. Correctness first.
 
-### 5. Guards vs Business Logic
-Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".
-
-### 6. No Manual `if` Blocks
+### 4. No Manual `if` Blocks
 **Never** write the `if` block manually when using `@inco`. The directive's sole purpose is to *generate* that block for you. Manual repetition defeats the purpose and leads to code duplication.
 
 ```go
@@ -215,18 +207,4 @@ if err != nil { // @inco: err == nil, -panic(err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 7. Standalone vs Acknowledgement Preference
-- **Standalone** (`// @inco: ...`): **Preferred** whenever possible. Use this if the variable is used later in the function.
-- **Acknowledgement** (`_ = var // @inco: ...`): Use **only** to silence "declared and not used" errors (e.g., pure check variables).
 
-```go
-// Case A: Variable used later -> Standalone
-err := doSomething()
-// @inco: err == nil, -return(err)
-return err // err is used here, so standalone is fine
-
-// Case B: Variable NOT used later -> Acknowledgement
-isValid := checkValid()
-_ = isValid // @inco: isValid, -return(false)
-// isValid never used again, need _ = to silence compiler
-```
