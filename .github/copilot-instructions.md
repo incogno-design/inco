@@ -177,16 +177,18 @@ _ = err // @inco: err == nil, -panic(err)
 ```
 
 ### 4. Group Declarations and Directives
-Keep variable declarations together, and group `@inco:` directives together. Mixing them makes code harder to scan. A clean visual separation between "setup" and "guards" improves readability:
+Keep variable declarations together, and group `@inco:` directives together. Mixing them makes code harder to scan. A clean visual separation between "setup" and "guards" improves readability.
+
+**Crucial**: When grouping, use **unique variable names** (e.g., `errA`, `errB`) instead of reusing `err`. Reusing `err` across grouped declarations often leads to "declared and not used" errors or accidental shadowing.
 
 ```go
-// ❌ Scattered: declarations and directives interleaved
+// ❌ Scattered & Shadowed: hard to read, error-prone
 a, err := doA()
 _ = err // @inco: err == nil, -panic(err)
-b, err := doB()
+b, err := doB() // err shadowed/reassigned
 _ = err // @inco: err == nil, -panic(err)
 
-// ✅ Grouped: declarations first, then guards
+// ✅ Grouped & Unique: clean, safe
 a, errA := doA()
 b, errB := doB()
 
@@ -194,7 +196,36 @@ _ = errA // @inco: errA == nil, -panic(errA)
 _ = errB // @inco: errB == nil, -panic(errB)
 ```
 
-When calls are independent of each other, batch the declarations at the top and the directives below. This makes it immediately clear which variables are being guarded. If a later call depends on an earlier guard (e.g., `b` requires `a` to be valid), keep that dependency boundary — group what you can, but don't sacrifice correctness for aesthetics.
+**Dependency Exception**: If a later call depends on an earlier guard (e.g., `b` requires `a` to be valid), **do not group them**. Correctness first.
 
 ### 5. Guards vs Business Logic
 Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".
+
+### 6. No Manual `if` Blocks
+**Never** write the `if` block manually when using `@inco`. The directive's sole purpose is to *generate* that block for you. Manual repetition defeats the purpose and leads to code duplication.
+
+```go
+// ❌ WRONG: Manual if + inco directive
+if err != nil { // @inco: err == nil, -panic(err)
+    panic(err)
+}
+
+// ✅ CORRECT: Let inco generate it
+_ = err // @inco: err == nil, -panic(err)
+```
+
+### 7. Standalone vs Acknowledgement Preference
+- **Standalone** (`// @inco: ...`): **Preferred** whenever possible. Use this if the variable is used later in the function.
+- **Acknowledgement** (`_ = var // @inco: ...`): Use **only** to silence "declared and not used" errors (e.g., pure check variables).
+
+```go
+// Case A: Variable used later -> Standalone
+err := doSomething()
+// @inco: err == nil, -return(err)
+return err // err is used here, so standalone is fine
+
+// Case B: Variable NOT used later -> Acknowledgement
+isValid := checkValid()
+_ = isValid // @inco: isValid, -return(false)
+// isValid never used again, need _ = to silence compiler
+```
