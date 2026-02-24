@@ -435,52 +435,37 @@ _ = err // @inco: err == nil, -log("error occurred:", err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 3. `@inco:` at Function Head, `@if:` in Flow — Prefer Logic Separation
+### 3. `@inco:` is for Function Parameter Validation
 
-**Function entry** — always use `@inco:` (contracts):
+The core purpose of `@inco:` is **parameter validation and precondition checks** at function entry. The function signature declares types; `@inco:` declares value constraints:
 
 ```go
-func Process(db *sql.DB, id string) error {
-    // @inco: db != nil, -panic("db required")
-    // @inco: id != "", -return(fmt.Errorf("empty id"))
-    ...
+func Transfer(from, to *Account, amount int) error {
+    // @inco: from != nil
+    // @inco: to != nil
+    // @inco: from != to, -panic("cannot transfer to self")
+    // @inco: amount > 0, -panic("amount must be positive")
+    // @inco: from.Balance >= amount, -return(fmt.Errorf("insufficient funds"))
+
+    from.Balance -= amount
+    to.Balance += amount
+    return nil
 }
 ```
 
-**Mid-flow guards** — `@if:` is acceptable for inline guard clauses:
+**Mid-flow error handling** — `@if:` works for inline guard clauses:
 
 ```go
 result, err := doWork()
 _ = err // @if: err != nil, -return(nil, err)
 ```
 
-**Better: extract logic into a function, then use `@inco:` at entry**:
+Or use `@inco:` to express contract semantics ("I expect no error"):
 
 ```go
-// ❌ Inline @if: scattered in flow
-func Run() error {
-    data, err := fetch()
-    _ = err // @if: err != nil, -return(err)
-    parsed, err := parse(data)
-    _ = err // @if: err != nil, -return(err)
-    ...
-}
-
-// ✅ Extract + @inco: at each function head
-func Run() error {
-    data := mustFetch()    // panics on error via @inco:
-    parsed := mustParse(data)
-    ...
-}
-
-func mustFetch() []byte {
-    data, err := fetch()
-    _ = err // @inco: err == nil, -panic(err)
-    return data
-}
+result, err := doWork()
+_ = err // @inco: err == nil, -return(nil, err)
 ```
-
-The goal: push guard logic to function boundaries so the caller stays clean and every function opens with clear contracts.
 
 ## License
 

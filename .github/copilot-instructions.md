@@ -187,9 +187,9 @@ if err != nil { panic(err) } // @inco: err == nil, -panic(err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 5. `@inco:` at Function Head, `@if:` in Flow — Prefer Logic Separation
+### 5. `@inco:` is for Function Parameter Validation
 
-**Function entry** — always use `@inco:` (contracts):
+The core purpose of `@inco:` is parameter validation and precondition checks at function entry. The function signature declares types; `@inco:` declares value constraints:
 
 ```go
 func Process(db *sql.DB, id string) error {
@@ -199,37 +199,10 @@ func Process(db *sql.DB, id string) error {
 }
 ```
 
-**Mid-flow guards** — `@if:` is acceptable for inline guard clauses:
+**Mid-flow** — both `@if:` and `@inco:` work for guard clauses in the middle of a function:
 
 ```go
 result, err := doWork()
-_ = err // @if: err != nil, -return(nil, err)
+_ = err // @if: err != nil, -return(nil, err)   // flow: if error, return
+_ = err // @inco: err == nil, -return(nil, err)  // contract: I expect no error
 ```
-
-**Better: extract logic into a function, then use `@inco:` at entry**:
-
-```go
-// ❌ Inline @if: scattered in flow
-func Run() error {
-    data, err := fetch()
-    _ = err // @if: err != nil, -return(err)
-    parsed, err := parse(data)
-    _ = err // @if: err != nil, -return(err)
-    ...
-}
-
-// ✅ Extract + @inco: at each function head
-func Run() error {
-    data := mustFetch()    // panics on error via @inco:
-    parsed := mustParse(data)
-    ...
-}
-
-func mustFetch() []byte {
-    data, err := fetch()
-    _ = err // @inco: err == nil, -panic(err)
-    return data
-}
-```
-
-The goal: push guard logic to function boundaries so the caller stays clean and every function opens with clear contracts.
