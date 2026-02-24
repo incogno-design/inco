@@ -39,6 +39,26 @@ jobs:
           # Clean up cache and dev-only files
           rm -rf .inco_cache
 
+      - name: Verify released code compiles
+        run: |
+          go build ./...
+          echo "release: build verification passed"
+
+      - name: Verify released tests pass
+        run: |
+          go test ./...
+          echo "release: test verification passed"
+
+      - name: Smoke test — self-bootstrap
+        run: |
+          # Build an inco binary from the released (plain Go) code
+          go build -o /tmp/inco-smoke ./cmd/inco
+
+          # Use the binary to gen + build itself — the strictest self-hosting check
+          /tmp/inco-smoke gen .
+          /tmp/inco-smoke build -o /tmp/inco-smoke2 ./cmd/inco
+          echo "release: self-bootstrap smoke test passed"
+
       - name: Push to main
         run: |
           git config user.name  "github-actions[bot]"

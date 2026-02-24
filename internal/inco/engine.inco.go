@@ -374,6 +374,11 @@ var internalPkgRe = regexp.MustCompile(`(^|/)internal/|(^|/)vendor/`)
 func (e *Engine) addMissingImports(content string, origFile *ast.File, directives map[int]*Directive) string {
 	// 1. Collect all package-qualified identifiers from directives.
 	needed := make(map[string]bool)
+	// knownPaths tracks imports with well-known paths (e.g. built-in
+	// actions like -log). These bypass importMap resolution because the
+	// user's project may contain a local package with the same short
+	// name, causing ambiguity in buildImportMap.
+	knownPaths := make(map[string]string)
 	for _, d := range directives {
 		sources := d.ActionArgs
 		if d.Expr != "" {
@@ -386,8 +391,11 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 		}
 		// -log generates log.Println(...) — the "log" package reference
 		// is not in the directive args, so we must add it explicitly.
+		// Use knownPaths to avoid ambiguity when the project has a local
+		// package also named "log".
 		if d.Action == ActionLog {
 			needed["log"] = true
+			knownPaths["log"] = "log"
 		}
 	}
 	// @inco: len(needed) > 0, -return(content)
@@ -421,7 +429,9 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	var toAdd []string
 	for pkg := range needed {
 		// @inco: !imported[pkg], -continue
-		if _, ok := importMap[pkg]; ok {
+		if _, ok := knownPaths[pkg]; ok {
+			toAdd = append(toAdd, pkg)
+		} else if _, ok := importMap[pkg]; ok {
 			toAdd = append(toAdd, pkg)
 		}
 	}
@@ -432,7 +442,11 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	shadowAST, err := parser.ParseFile(fset, "", content, parser.ParseComments)
 	_ = err // @inco: err == nil, -return(content)
 	for _, pkg := range toAdd {
-		astutil.AddImport(fset, shadowAST, importMap[pkg])
+		if path, ok := knownPaths[pkg]; ok {
+			astutil.AddImport(fset, shadowAST, path)
+		} else {
+			astutil.AddImport(fset, shadowAST, importMap[pkg])
+		}
 	}
 
 	// 5. Re-render.

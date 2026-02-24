@@ -38,6 +38,22 @@ func readShadow(t *testing.T, e *Engine) string {
 	return ""
 }
 
+// readShadowFor returns the shadow content for a given source file basename.
+func readShadowFor(t *testing.T, e *Engine, basename string) string {
+	t.Helper()
+	for origPath, sp := range e.Overlay.Replace {
+		if filepath.Base(origPath) == basename {
+			data, err := os.ReadFile(sp)
+			if err != nil {
+				t.Fatalf("reading shadow for %s: %v", basename, err)
+			}
+			return string(data)
+		}
+	}
+	t.Fatalf("no shadow file for %s", basename)
+	return ""
+}
+
 // ---------------------------------------------------------------------------
 // No directives — no overlay
 // ---------------------------------------------------------------------------
@@ -637,6 +653,37 @@ func Do(x int) {
 	shadow := readShadow(t, e)
 	if !strings.Contains(shadow, `"log"`) {
 		t.Errorf("should inject log import for -log action, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, `log.Println(`) {
+		t.Errorf("should contain log.Println call, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_ImportInjection_LogAction_AmbiguousLocalPkg(t *testing.T) {
+	// When the project has a local package named "log" (e.g. mymod/log),
+	// buildImportMap marks "log" as ambiguous and removes it. The -log
+	// action must still inject stdlib "log" via knownPaths bypass.
+	dir := setupDir(t, map[string]string{
+		"go.mod": "module testmod\n\ngo 1.21\n",
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0, -log("x must be positive")
+	_ = x
+}
+`,
+		"log/log.go": `package log
+
+func Custom() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadowFor(t, e, "main.go")
+	if !strings.Contains(shadow, `"log"`) {
+		t.Errorf("should inject stdlib log import even when local log package exists, got:\n%s", shadow)
 	}
 	if !strings.Contains(shadow, `log.Println(`) {
 		t.Errorf("should contain log.Println call, got:\n%s", shadow)
