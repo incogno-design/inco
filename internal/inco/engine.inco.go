@@ -342,16 +342,64 @@ func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName 
 // Import management
 // ---------------------------------------------------------------------------
 
-// buildImportMap dynamically resolves package names to import paths by
-// querying the Go toolchain. The result is cached for the engine's lifetime
-// so that "go list" runs at most once per invocation.
+// stdlibWhitelist contains common standard library packages that are allowed
+// for auto-import. Only these packages can be auto-imported from stdlib;
+// obscure or dangerous packages (unsafe, debug/*, etc.) are excluded.
+var stdlibWhitelist = map[string]string{
+	// core
+	"fmt":     "fmt",
+	"errors":  "errors",
+	"strings": "strings",
+	"strconv": "strconv",
+	"bytes":   "bytes",
+	"regexp":  "regexp",
+	"sort":    "sort",
+	"slices":  "slices",
+	"maps":    "maps",
+	"math":    "math",
+	"cmp":     "cmp",
+
+	// os / io / path
+	"os":       "os",
+	"io":       "io",
+	"filepath": "path/filepath",
+	"path":     "path",
+	"bufio":    "bufio",
+
+	// time / context / sync
+	"time":    "time",
+	"context": "context",
+	"sync":    "sync",
+
+	// encoding
+	"json":   "encoding/json",
+	"xml":    "encoding/xml",
+	"csv":    "encoding/csv",
+	"base64": "encoding/base64",
+	"hex":    "encoding/hex",
+
+	// net
+	"http": "net/http",
+	"url":  "net/url",
+
+	// log
+	"log":  "log",
+	"slog": "log/slog",
+}
+
+// buildImportMap resolves package names to import paths. Standard library
+// packages are restricted to a curated whitelist of common packages;
+// project dependencies are still resolved dynamically via "go list".
+// The result is cached for the engine's lifetime.
 func (e *Engine) buildImportMap() map[string]string {
 	e.importOnce.Do(func() {
 		e.importMap = make(map[string]string)
 		ambiguous := make(map[string]bool)
 
-		// 1. All standard library packages.
-		e.collectPackages(ambiguous, "-e", "std")
+		// 1. Seed with whitelisted standard library packages.
+		for name, path := range stdlibWhitelist {
+			e.importMap[name] = path
+		}
 
 		// 2. Packages already used in the module (covers third-party deps).
 		e.collectPackages(ambiguous, "-e", "-deps", "./...")

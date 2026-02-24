@@ -124,7 +124,18 @@ Shadow files live in `.inco_cache/` and are wired in via `go build -overlay`.
 
 When directive arguments reference packages (e.g. `fmt.Sprintf`, `errors.New`), Inco automatically adds the corresponding import to the shadow file via `astutil.AddImport`. No manual import management needed.
 
-The import mapping is built by running `go list -e std` and `go list -e -deps ./...` once per `inco gen` invocation (results are cached across files). Ambiguous package names (e.g. `template` could mean `text/template` or `html/template`) are removed from the mapping to prevent incorrect imports. Internal and vendored packages are also filtered out.
+Standard library auto-imports are restricted to a curated whitelist of common packages:
+
+| Category | Packages |
+|----------|----------|
+| Core | `fmt` `errors` `strings` `strconv` `bytes` `regexp` `sort` `slices` `maps` `math` `cmp` |
+| OS / IO | `os` `io` `filepath` `path` `bufio` |
+| Time / Sync | `time` `context` `sync` |
+| Encoding | `json` `xml` `csv` `base64` `hex` |
+| Net | `http` `url` |
+| Log | `log` `slog` |
+
+Third-party dependencies used in your module are resolved dynamically via `go list -e -deps ./...` (results are cached across files). Ambiguous package names (e.g. a local package shadowing a stdlib name) are removed from the mapping to prevent incorrect imports. Internal and vendored packages are also filtered out.
 
 ## Usage
 

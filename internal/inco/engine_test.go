@@ -1399,6 +1399,109 @@ func Do(s string) string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Autoimport whitelist — whitelisted stdlib packages are auto-imported
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportWhitelist_Allowed(t *testing.T) {
+	// Each sub-test verifies that a whitelisted package is auto-imported
+	// when referenced in a directive expression or action args.
+	cases := []struct {
+		name     string
+		ref      string // package-qualified identifier used in directive
+		wantPath string // expected import path in shadow
+	}{
+		{"fmt", "fmt.Errorf", `"fmt"`},
+		{"errors", "errors.New", `"errors"`},
+		{"strings", "strings.Contains", `"strings"`},
+		{"strconv", "strconv.Itoa", `"strconv"`},
+		{"filepath", "filepath.Base", `"path/filepath"`},
+		{"os", "os.ErrNotExist", `"os"`},
+		{"time", "time.Now", `"time"`},
+		{"json", "json.Marshal", `"encoding/json"`},
+		{"http", "http.StatusOK", `"net/http"`},
+		{"context", "context.Background", `"context"`},
+		{"sync", "sync.Mutex", `"sync"`},
+		{"math", "math.MaxInt", `"math"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupDir(t, map[string]string{
+				"main.go": fmt.Sprintf(`package main
+
+func Do() {
+	// @inco: %s != nil
+}
+`, tc.ref),
+			})
+			e := NewEngine(dir)
+			if err := e.Run(); err != nil {
+				t.Fatal(err)
+			}
+			shadow := readShadow(t, e)
+			if !strings.Contains(shadow, tc.wantPath) {
+				t.Errorf("should auto-import %s, got:\n%s", tc.wantPath, shadow)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Autoimport whitelist — non-whitelisted stdlib packages are NOT imported
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportWhitelist_Blocked(t *testing.T) {
+	// Packages NOT in the whitelist should not be auto-imported even if
+	// they look like package-qualified identifiers in directives.
+	cases := []struct {
+		name    string
+		ref     string // identifier that resembles pkg.Symbol
+		blocked string // import path that must NOT appear
+	}{
+		{"unsafe", "unsafe.Pointer", `"unsafe"`},
+		{"reflect", "reflect.TypeOf", `"reflect"`},
+		{"runtime", "runtime.GOOS", `"runtime"`},
+		{"syscall", "syscall.SIGTERM", `"syscall"`},
+		{"ast", "ast.File", `"go/ast"`},
+		{"exec", "exec.Command", `"os/exec"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupDir(t, map[string]string{
+				"main.go": fmt.Sprintf(`package main
+
+func Do() {
+	// @inco: %s != nil
+}
+`, tc.ref),
+			})
+			e := NewEngine(dir)
+			if err := e.Run(); err != nil {
+				t.Fatal(err)
+			}
+			shadow := readShadow(t, e)
+			if strings.Contains(shadow, tc.blocked) {
+				t.Errorf("should NOT auto-import %s, got:\n%s", tc.blocked, shadow)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Whitelist map completeness — every entry resolves correctly
+// ---------------------------------------------------------------------------
+
+func TestStdlibWhitelist_Entries(t *testing.T) {
+	if len(stdlibWhitelist) == 0 {
+		t.Fatal("stdlibWhitelist is empty")
+	}
+	for name, path := range stdlibWhitelist {
+		if name == "" || path == "" {
+			t.Errorf("invalid whitelist entry: name=%q path=%q", name, path)
+		}
+	}
+}
+
 // ===========================================================================
 // P1: Incremental cache consistency — edge cases
 // ===========================================================================
