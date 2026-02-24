@@ -24,7 +24,7 @@ if cmd == "build" { runBuild() }
 
 ### 2. Two Directive Forms
 
-**Standalone** (entire line is a comment):
+**Standalone** (entire line is a comment) — **preferred**:
 ```go
 // @inco: x != nil
 // @inco: x > 0, -panic("must be positive")
@@ -36,7 +36,7 @@ _ = err // @inco: err == nil, -panic(err)
 _ = skip // @inco: !skip, -return(filepath.SkipDir)
 ```
 
-Use the inline form when a variable is only used within the directive — `_ = var` suppresses the compiler's unused variable error. This is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." Always prefer this pattern over leaving variables unacknowledged.
+**Always prefer standalone** when the variable is already used elsewhere in the function — it's cleaner and avoids unnecessary `_ = var`. Use the inline form **only** when a variable is exclusively referenced inside the directive; in that case `_ = var` suppresses the compiler's unused variable error. This is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco."
 
 ### 3. Available Actions
 
@@ -142,29 +142,6 @@ inco clean .         # delete .inco_cache/
 
 For single-repo projects, develop on the `inco` branch (with `.inco.go` sources) and use CI to automatically release to `main` (plain `.go` with guards baked in). See `.github/workflows/release-single-repo.yml` for an example. Consumers can `go install` / `go get` from `main` without needing inco.
 
-## Engine Details
-
-### Incremental Builds
-
-`inco gen` maintains `.inco_cache/manifest.json`, recording each source file's SHA-256 hash. Unchanged files are skipped; orphaned old shadow files are automatically cleaned up.
-
-### Parallel Processing
-
-File parsing and shadow generation run in parallel based on `GOMAXPROCS`, each goroutine with its own `token.FileSet`.
-
-### Auto Import
-
-`pkg.Func` references in directive arguments are automatically injected as imports. A package name → path mapping is built once via `go list` (cached); ambiguous packages with the same name (e.g., `template`) are removed, and internal/vendor packages are filtered out.
-
-## Audit Metrics
-
-`inco audit` reports two key metrics:
-
-- **inco/(if+inco)**: The ratio of guard directives to all conditional checks. This reflects the degree of separation between guards and business logic — higher is not necessarily better. A ratio that is too high suggests business branches may have been incorrectly converted to `@inco:`. The ideal state is: all guards use `@inco:`, all business logic stays in `if`, and the ratio naturally settles at a reasonable value.
-- **Function coverage**: The percentage of functions with at least one `@inco:` directive — higher is better.
-
-The remaining `if` statements should all be genuine business logic.
-
 ## Best Practices & Common Pitfalls
 
 ### 1. The Acknowledgement Pattern
@@ -212,6 +189,7 @@ _ = err // @inco: err == nil, -panic(err)
 // ✅ Grouped: declarations first, then guards
 a, errA := doA()
 b, errB := doB()
+
 _ = errA // @inco: errA == nil, -panic(errA)
 _ = errB // @inco: errB == nil, -panic(errB)
 ```
