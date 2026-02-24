@@ -7,7 +7,6 @@
 //	// @inco: <expr>, -return(x, y)
 //	// @inco: <expr>, -continue
 //	// @inco: <expr>, -break
-//	// @inco: <expr>, -do(stmt)
 //
 // The default action is -panic with an auto-generated message.
 package inco
