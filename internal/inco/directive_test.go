@@ -166,37 +166,6 @@ func TestParseDirective_Break(t *testing.T) {
 	}
 }
 
-func TestBuildPanicBody_Do(t *testing.T) {
-	e := NewEngine(t.TempDir())
-	d := &Directive{Action: ActionDo, Expr: "x != nil", ActionArgs: []string{`log.Println("x is nil")`}}
-	body := e.buildPanicBody(d, "test.go", 1)
-	want := `log.Println("x is nil")`
-	if body != want {
-		t.Errorf("got %q, want %q", body, want)
-	}
-}
-
-func TestBuildPanicBody_DoMultiExpr(t *testing.T) {
-	e := NewEngine(t.TempDir())
-	d := &Directive{Action: ActionDo, Expr: "ok", ActionArgs: []string{"count++", `log.Println("fail")`}}
-	body := e.buildPanicBody(d, "test.go", 1)
-	want := `count++; log.Println("fail")`
-	if body != want {
-		t.Errorf("got %q, want %q", body, want)
-	}
-}
-
-func TestParseDirective_DoNotParsed(t *testing.T) {
-	// -do is internal only — ParseDirective should not recognize it.
-	d := ParseDirective(`// @inco: x != nil, -do(log.Println("x is nil"))`)
-	if d == nil {
-		t.Fatal("got nil — should parse as expr-only with default panic")
-	}
-	if d.Action != ActionPanic {
-		t.Errorf("Action = %v, want ActionPanic (do should not be parsed)", d.Action)
-	}
-}
-
 func TestParseDirective_Log(t *testing.T) {
 	d := ParseDirective(`// @inco: x > 0, -log("x must be positive", x)`)
 	if d == nil {

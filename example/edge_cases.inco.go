@@ -88,3 +88,29 @@ func SafeSlice(s []int, start, end int) []int {
 	// @inco: start <= end, -return(nil)
 	return s[start:end]
 }
+
+// --- Case 10: -log action (auto-imports "log" package) ---
+
+func ProcessOrder(orderID string, amount int) {
+	// @inco: orderID != "", -log("empty order ID received")
+	// @inco: amount > 0, -log("invalid amount:", amount)
+	fmt.Printf("processing order %s for %d\n", orderID, amount)
+}
+
+// --- Case 11: -log then -panic on same variable ---
+
+func MustConnect(addr string) {
+	_ = addr // @inco: addr != "", -log("addr is empty, about to panic")
+	_ = addr // @inco: addr != "", -panic("addr must not be empty")
+	fmt.Println("connecting to", addr)
+}
+
+// --- Case 12: Local variable shadows package name ---
+
+type myErr struct{ Msg string }
+
+func CheckLocal() string {
+	errors := myErr{Msg: "boom"}
+	// @inco: errors.Msg != "", -panic("empty msg")
+	return errors.Msg
+}
