@@ -315,7 +315,8 @@ inco audit — contract coverage report
   Without @inco::  22 / 52  (42.3%)
 
 Directive vs if:
-  @inco::           67
+  @inco::             67
+  @if::               0
   ─────────────────────
   Total directives:   67
   Native if stmts:    59

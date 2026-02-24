@@ -29,7 +29,9 @@ type FileAudit struct {
 	RelPath      string      // relative to root
 	Funcs        []FuncAudit // declared functions
 	IfCount      int         // native if statements
-	RequireCount int         // @inco: directives
+	RequireCount int         // total directives (@inco: + @if:)
+	IncoCount    int         // @inco: directives only
+	IfDirCount   int         // @if: directives only
 }
 
 // AuditResult is the aggregate report.
@@ -42,6 +44,8 @@ type AuditResult struct {
 	TotalIfs        int
 	TotalRequires   int
 	TotalDirectives int
+	TotalInco       int // @inco: count
+	TotalIfDir      int // @if: count
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +78,8 @@ func Audit(root string) (*AuditResult, error) {
 	for _, f := range files {
 		r.TotalIfs += f.IfCount
 		r.TotalRequires += f.RequireCount
+		r.TotalInco += f.IncoCount
+		r.TotalIfDir += f.IfDirCount
 		for _, fn := range f.Funcs {
 			r.TotalFuncs++
 			if fn.RequireCount > 0 {
@@ -139,6 +145,11 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 			d := ParseDirective(c.Text)
 			_ = d // @inco: d != nil, -continue
 			fa.RequireCount++
+			if d.Negated {
+				fa.IfDirCount++
+			} else {
+				fa.IncoCount++
+			}
 			directives = append(directives, directiveInfo{pos: c.Pos()})
 		}
 	}
@@ -254,7 +265,8 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 
 	// --- Directive vs if ---
 	fmt.Fprintf(w, "Directive vs if:\n")
-	fmt.Fprintf(w, "  @inco::           %d\n", r.TotalRequires)
+	fmt.Fprintf(w, "  @inco::             %d\n", r.TotalInco)
+	fmt.Fprintf(w, "  @if::               %d\n", r.TotalIfDir)
 	fmt.Fprintf(w, "  ─────────────────────\n")
 	fmt.Fprintf(w, "  Total directives:   %d\n", r.TotalDirectives)
 	fmt.Fprintf(w, "  Native if stmts:    %d\n", r.TotalIfs)
