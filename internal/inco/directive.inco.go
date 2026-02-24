@@ -36,11 +36,13 @@ var actionFromName = map[string]ActionKind{
 }
 
 // ParseDirective extracts a Directive from a comment string.
-// Returns nil when the comment is not a valid @inco:/@if: directive.
+// Returns nil when the comment is not a valid directive.
 //
-// Syntax: @inco: <expr>[, -action[(args...)]]
+// Syntax:
 //
-//	@if: <expr>[, -action[(args...)]]
+//	prefix: <expr>[, -action[(args...)]]
+//
+// where prefix is @inco or @if.
 func ParseDirective(comment string) *Directive {
 	body := stripComment(comment)
 	// @inco: body != "", -return(nil)

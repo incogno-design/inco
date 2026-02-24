@@ -21,18 +21,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Install inco
-        run: |
-          # Bootstrap: build inco from source (without overlay — guards absent but functional)
-          go build -o /usr/local/bin/inco ./cmd/inco
+        run: go install github.com/imnive-design/inco-go/cmd/inco@latest
 
       - name: Smoke test — self-bootstrap
         run: |
-          # Use the bootstrapped binary to gen + build itself (with guards)
+          # Use installed inco to gen + build itself
           inco gen .
           inco build -o /tmp/inco-verified ./cmd/inco
-
-          # Replace bootstrap binary with the fully-guarded one
-          mv /tmp/inco-verified /usr/local/bin/inco
 
           # Clean up overlay so release starts fresh
           rm -rf .inco_cache
