@@ -36,7 +36,7 @@ _ = err // @inco: err == nil, -panic(err)
 _ = skip // @inco: !skip, -return(filepath.SkipDir)
 ```
 
-Use the inline form when a variable is only used within the directive — `_ = var` suppresses the compiler's unused variable error.
+Use the inline form when a variable is only used within the directive — `_ = var` suppresses the compiler's unused variable error. This is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." Always prefer this pattern over leaving variables unacknowledged.
 
 ### 3. Available Actions
 
@@ -85,6 +85,7 @@ The following paths are always skipped regardless of `.incoignore` configuration
 3. Use standalone form for parameter validation at function entry: `// @inco: root != ""`
 4. Use `-continue` or `-break` for filtering conditions in loops
 5. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
+6. **Always use the acknowledgement pattern** (`_ = var`) when a variable is only referenced inside an inline directive — this is not a workaround but the idiomatic way to bind variables to inco guards. Omitting it causes compiler errors for unused variables
 
 ### if → @inco: Conversion Templates
 
@@ -198,5 +199,24 @@ _ = err // @inco: err == nil, -log("error occurred:", err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 4. Guards vs Business Logic
+### 4. Group Declarations and Directives
+Keep variable declarations together, and group `@inco:` directives together. Mixing them makes code harder to scan. A clean visual separation between "setup" and "guards" improves readability:
+
+```go
+// ❌ Scattered: declarations and directives interleaved
+a, err := doA()
+_ = err // @inco: err == nil, -panic(err)
+b, err := doB()
+_ = err // @inco: err == nil, -panic(err)
+
+// ✅ Grouped: declarations first, then guards
+a, errA := doA()
+b, errB := doB()
+_ = errA // @inco: errA == nil, -panic(errA)
+_ = errB // @inco: errB == nil, -panic(errB)
+```
+
+When calls are independent of each other, batch the declarations at the top and the directives below. This makes it immediately clear which variables are being guarded. If a later call depends on an earlier guard (e.g., `b` requires `a` to be valid), keep that dependency boundary — group what you can, but don't sacrifice correctness for aesthetics.
+
+### 5. Guards vs Business Logic
 Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".
