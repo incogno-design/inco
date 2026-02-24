@@ -1,161 +1,198 @@
-# Inco — Copilot 使用手册
+# Inco — Copilot Handbook
 
-## 什么是 Inco
+## What is Inco
 
-Inco 是 Go 的编译期断言引擎。在注释中写 `// @inco:` 指令，inco 自动生成对应的 `if` 守卫块，通过 `go build -overlay` 注入编译，源文件零侵入。
+Inco is a compile-time assertion engine for Go. Write `// @inco:` directives in comments, and inco automatically generates corresponding `if` guard blocks, injected via `go build -overlay`. Zero source file invasion.
 
-## 核心规则
+## Core Rules
 
-### 1. `@inco:` 是守卫，不是逻辑
+### 1. `@inco:` is for Guards, Not Logic
 
-**用 `@inco:`**：nil 检查、错误检查、范围验证、前置条件  
-**用 `if`**：业务分支、条件选择、流程控制
+**Use `@inco:`**: nil checks, error checks, range validation, preconditions  
+**Use `if`**: business branches, conditional selection, flow control
 
 ```go
-// ✅ 守卫 → @inco:
+// ✅ Guard → @inco:
 // @inco: db != nil
 // @inco: err == nil, -panic(err)
 // @inco: len(s) > 0, -return(0, fmt.Errorf("empty"))
 
-// ✅ 逻辑 → if
+// ✅ Logic → if
 if val < lo { return lo }
 if cmd == "build" { runBuild() }
 ```
 
-### 2. 两种指令形式
+### 2. Two Directive Forms
 
-**Standalone**（整行是注释）：
+**Standalone** (entire line is a comment):
 ```go
 // @inco: x != nil
 // @inco: x > 0, -panic("must be positive")
 ```
 
-**Inline**（代码行尾部追加指令）：
+**Inline** (appended to the end of a code line):
 ```go
 _ = err // @inco: err == nil, -panic(err)
 _ = skip // @inco: !skip, -return(filepath.SkipDir)
 ```
 
-Inline 形式用于变量只在指令中使用的场景——`_ = var` 消除编译器 unused variable 报错。
+Use the inline form when a variable is only used within the directive — `_ = var` suppresses the compiler's unused variable error.
 
-### 3. 可用动作
+### 3. Available Actions
 
-| 动作 | 语法 | 含义 |
-|------|------|------|
-| panic（默认） | `// @inco: <expr>` | 自动生成 panic 消息 |
-| panic（自定义） | `// @inco: <expr>, -panic("msg")` | 自定义 panic |
-| return | `// @inco: <expr>, -return(vals...)` | 返回指定值 |
-| return（裸） | `// @inco: <expr>, -return` | 裸 return |
-| continue | `// @inco: <expr>, -continue` | continue 循环 |
-| break | `// @inco: <expr>, -break` | break 循环 |
+| Action | Syntax | Meaning |
+|--------|--------|---------|
+| panic (default) | `// @inco: <expr>` | Auto-generated panic message |
+| panic (custom) | `// @inco: <expr>, -panic("msg")` | Custom panic message |
+| return | `// @inco: <expr>, -return(vals...)` | Return specified values |
+| return (bare) | `// @inco: <expr>, -return` | Bare return |
+| continue | `// @inco: <expr>, -continue` | Continue the loop |
+| break | `// @inco: <expr>, -break` | Break the loop |
 | log | `// @inco: <expr>, -log(args...)` | log.Println(args...) |
 
-### 4. 指令语义
+### 4. Directive Semantics
 
-`@inco:` 的语义是 **require**——`// @inco: <expr>` 等价于 `require <expr>`，即"要求 expr 必须为 true"。条件不满足时执行动作（默认 panic）。生成代码为 `if !(<expr>) { action }`。
+The semantics of `@inco:` is **require** — `// @inco: <expr>` is equivalent to `require <expr>`, meaning "expr must be true". When the condition is not met, the action is executed (default: panic). Generated code is `if !(<expr>) { action }`.
 
-注意表达式是**正向**的——写你期望成立的条件：
+Note that expressions are **positive** — write the condition you expect to hold:
 ```go
-// @inco: err == nil, -panic(err)    // 期望无错误
-// @inco: n > 0, -continue           // 期望 n 为正
-// @inco: !skip, -return(filepath.SkipDir)  // 期望不跳过
+// @inco: err == nil, -panic(err)    // expect no error
+// @inco: n > 0, -continue           // expect n to be positive
+// @inco: !skip, -return(filepath.SkipDir)  // expect not skipped
 ```
 
-## 文件约定
+## File Conventions
 
-- `foo.inco.go` — 包含 `@inco:` 指令的源文件（推荐命名）
-- `.inco_cache/` — 生成的影子文件、overlay.json 和 manifest.json（加入 .gitignore）
-- `foo_test.go` — 测试文件（不会被 inco 处理，gen 和 audit 均跳过）
-- `.incoignore` — 排除文件/目录，支持层级嵌套（类 .gitignore 语法）
+- `foo.inco.go` — source files containing `@inco:` directives (recommended naming)
+- `.inco_cache/` — generated shadow files, overlay.json and manifest.json (add to .gitignore)
+- `foo_test.go` — test files (not processed by inco; skipped by both gen and audit)
+- `.incoignore` — exclude files/directories, supports hierarchical nesting (.gitignore-like syntax)
 
-### 自动跳过的路径
+### Auto-skipped Paths
 
-以下路径无论是否配置 `.incoignore` 都会被跳过：
-- 隐藏目录（`.git`、`.idea` 等）
+The following paths are always skipped regardless of `.incoignore` configuration:
+- Hidden directories (`.git`, `.idea`, etc.)
 - `vendor/`
 - `testdata/`
-- 测试文件（`_test.go`）
+- Test files (`_test.go`)
 
-## 编写规范
+## Coding Guidelines
 
-### 写新代码时
+### Writing New Code
 
-1. 防御性检查用 `// @inco:`，不用 `if`
-2. 错误处理优先用 inline 形式：`_ = err // @inco: err == nil, -panic(err)`
-3. 函数入口的参数校验用 standalone：`// @inco: root != ""`
-4. 循环中的过滤条件可以用 `-continue` 或 `-break`
-5. 指令中可以引用任何可用包（如 `fmt.Errorf`、`filepath.SkipDir`），auto-import 会自动处理
+1. Use `// @inco:` for defensive checks, not `if`
+2. Prefer inline form for error handling: `_ = err // @inco: err == nil, -panic(err)`
+3. Use standalone form for parameter validation at function entry: `// @inco: root != ""`
+4. Use `-continue` or `-break` for filtering conditions in loops
+5. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
 
-### if → @inco: 转换模板
+### if → @inco: Conversion Templates
 
 ```go
-// 转换前：
+// Before:
 if err != nil { return nil, err }
-// 转换后：
+// After:
 _ = err // @inco: err == nil, -return(nil, err)
 
-// 转换前：
+// Before:
 if x == nil { panic("x is nil") }
-// 转换后：
+// After:
 // @inco: x != nil, -panic("x is nil")
 
-// 转换前：
+// Before:
 if !valid { continue }
-// 转换后：
+// After:
 _ = valid // @inco: valid, -continue
 
-// 转换前：
+// Before:
 if n == target { break }
-// 转换后：
+// After:
 _ = n // @inco: n != target, -break
 ```
 
-### 不要转换的 if
+### Do NOT Convert These `if` Statements
 
-- 业务逻辑分支：`if val < lo { return lo }`
-- 有 else 的条件：`if x { A } else { B }`
-- 功能性判断：`if cmd == "build" { ... }`
-- 含副作用的条件块（多行 body）
+- Business logic branches: `if val < lo { return lo }`
+- Conditions with else: `if x { A } else { B }`
+- Functional checks: `if cmd == "build" { ... }`
+- Conditional blocks with side effects (multi-line body)
 
-## 常用命令
+## Common Commands
 
 ```bash
-# 安装
+# Install
 go install github.com/imnive-design/inco-go/cmd/inco@latest
 
-# 日常开发
+# Daily development
 inco build ./...     # gen + build
 inco test ./...      # gen + test
-inco audit .         # 覆盖率报告
+inco audit .         # coverage report
 
-# 发布（无需 inco 即可 go build）
-inco release .            # .inco.go → .inco（备份）+ .go（含守卫）
-inco release --dry-run .  # 预览，不写文件
-inco release clean .      # 恢复
+# Release (go build works without inco)
+inco release .            # .inco.go → .inco (backup) + .go (with guards)
+inco release --dry-run .  # preview, no file writes
+inco release clean .      # restore
 
-# 清理
-inco clean .         # 删除 .inco_cache/
+# Clean up
+inco clean .         # delete .inco_cache/
 ```
 
-## 引擎细节
+## Engine Details
 
-### 增量构建
+### Incremental Builds
 
-`inco gen` 维护 `.inco_cache/manifest.json`，记录每个源文件的 SHA-256 哈希。未变更的文件直接跳过，孤立的旧 shadow 文件自动清理。
+`inco gen` maintains `.inco_cache/manifest.json`, recording each source file's SHA-256 hash. Unchanged files are skipped; orphaned old shadow files are automatically cleaned up.
 
-### 并行处理
+### Parallel Processing
 
-文件解析和 shadow 生成按 `GOMAXPROCS` 并行，每个 goroutine 独立 `token.FileSet`。
+File parsing and shadow generation run in parallel based on `GOMAXPROCS`, each goroutine with its own `token.FileSet`.
 
-### 自动导入
+### Auto Import
 
-指令参数中的 `pkg.Func` 引用会自动注入 import。通过 `go list` 一次性构建包名→路径映射（缓存），同名包（如 `template`）会被移除以避免歧义，internal/vendor 包被过滤。
+`pkg.Func` references in directive arguments are automatically injected as imports. A package name → path mapping is built once via `go list` (cached); ambiguous packages with the same name (e.g., `template`) are removed, and internal/vendor packages are filtered out.
 
-## 审计指标
+## Audit Metrics
 
-`inco audit` 报告两个关键指标：
+`inco audit` reports two key metrics:
 
-- **inco/(if+inco)**：守卫指令占所有条件检查的比例。该比例反映守卫与业务逻辑的分离程度，不是越高越好——过高说明可能把业务分支也错误地转成了 `@inco:`。理想状态是所有守卫都用 `@inco:`、所有业务逻辑都留在 `if` 中，比例自然趋于合理值
-- **函数覆盖率**：有至少一个 `@inco:` 的函数比例，越高越好
+- **inco/(if+inco)**: The ratio of guard directives to all conditional checks. This reflects the degree of separation between guards and business logic — higher is not necessarily better. A ratio that is too high suggests business branches may have been incorrectly converted to `@inco:`. The ideal state is: all guards use `@inco:`, all business logic stays in `if`, and the ratio naturally settles at a reasonable value.
+- **Function coverage**: The percentage of functions with at least one `@inco:` directive — higher is better.
 
-剩余的 `if` 应该都是真正的业务逻辑。
+The remaining `if` statements should all be genuine business logic.
+
+## Best Practices & Common Pitfalls
+
+### 1. Eliminating Unused Variables
+If a variable (e.g., `err`) is only used within an `@inco:` directive (which gets compiled into a guard, potentially leaving the variable "unused" in the original code), use `_ = var` to suppress the compile error:
+
+```go
+// ❌ Wrong: err unused
+// @inco: err == nil, -panic(err)
+
+// ✅ Correct
+_ = err // @inco: err == nil, -panic(err)
+```
+
+### 2. Long Expression Optimization
+If the expression in `@inco:` is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
+
+```go
+// ❌ Verbose and hard to read
+// @inco: si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo, -panic(...)
+
+// ✅ Clear
+isParentValid := si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo
+_ = isParentValid // @inco: isParentValid, -panic(...)
+```
+
+### 3. Repeated Var Assignment for Multiple Guards
+When applying multiple inco directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line.
+
+```go
+// ✅ Best practice: explicitly suppress unused checks for each line
+_ = err // @inco: err == nil, -log("error occurred:", err)
+_ = err // @inco: err == nil, -panic(err)
+```
+
+### 4. Guards vs Business Logic
+Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".

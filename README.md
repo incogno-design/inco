@@ -64,6 +64,18 @@ func Transfer(from *Account, to *Account, amount int) error {
 
 Five directives, each expressing a precondition the caller must satisfy. No `if` noise — just intent.
 
+### Directive Semantics
+
+The semantics of `@inco:` is **require** — `// @inco: <expr>` is equivalent to `require <expr>`, meaning "expr must be true". When the condition is not met, the action is executed (default: panic). Generated code is `if !(<expr>) { action }`.
+
+Expressions are **positive** — write the condition you expect to hold:
+
+```go
+// @inco: err == nil, -panic(err)    // require: no error
+// @inco: n > 0, -continue           // require: n is positive
+// @inco: !skip, -return(filepath.SkipDir)  // require: not skipped
+```
+
 ### Actions
 
 | Action | Syntax | Meaning |
@@ -74,6 +86,7 @@ Five directives, each expressing a precondition the caller must satisfy. No `if`
 | return (bare) | `// @inco: <expr>, -return` | Bare return |
 | continue | `// @inco: <expr>, -continue` | Continue enclosing loop |
 | break | `// @inco: <expr>, -break` | Break enclosing loop |
+| log | `// @inco: <expr>, -log(args...)` | log.Println(args...) |
 
 ### Generated Output
 
@@ -257,7 +270,7 @@ Ignored by .incoignore (4):
   example/transfer.inco.go
 ```
 
-The goal: drive `inco/(if+inco)` above 50%, meaning the majority of defensive checks live in directives rather than manual `if` statements.
+The `inco/(if+inco)` ratio reflects the degree of separation between guards and business logic — **higher is not necessarily better**. A ratio that is too high suggests business branches may have been incorrectly converted to `@inco:`. The ideal state is: all guards use `@inco:`, all business logic stays in `if`, and the ratio naturally settles at a reasonable value.
 
 ## How It Works
 
@@ -328,6 +341,57 @@ _ = err // @inco: err == nil, -panic(err)
 - **Cache-friendly**: Content-hash (SHA-256) based shadow filenames for stable build cache
 - **Source-mapped**: `//line` directives preserve original file:line in stack traces
 - **Auto-import**: Package references in directive args are auto-imported (with disambiguation)
+
+## Best Practices & Common Pitfalls
+
+### 1. Eliminating Unused Variables
+
+If a variable (e.g., `err`) is only used within an `@inco:` directive — which compiles into a guard in the shadow, leaving the variable "unused" in the original code — use `_ = var` to suppress the compile error:
+
+```go
+// ❌ Wrong: err unused
+// @inco: err == nil, -panic(err)
+
+// ✅ Correct
+_ = err // @inco: err == nil, -panic(err)
+```
+
+### 2. Long Expression Optimization
+
+If the expression in `@inco:` is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
+
+```go
+// ❌ Verbose and hard to read
+// @inco: si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo, -panic(...)
+
+// ✅ Clear
+isParentValid := si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo
+_ = isParentValid // @inco: isParentValid, -panic(...)
+```
+
+### 3. Repeated Var Assignment for Multiple Guards
+
+When applying multiple inco directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line:
+
+```go
+// ✅ Best practice: explicitly suppress unused checks for each line
+_ = err // @inco: err == nil, -log("error occurred:", err)
+_ = err // @inco: err == nil, -panic(err)
+```
+
+### 4. Guards vs Business Logic
+
+Always remember that the `inco audit` ratio is not a "higher is better" metric. Do not force-convert `if` statements with business semantics into `@inco:` just to inflate the ratio. `@inco:` is only for hard constraints where "if not met, subsequent code cannot or should not execute".
+
+```go
+// ✅ Guard → @inco:
+// @inco: db != nil
+// @inco: err == nil, -panic(err)
+
+// ✅ Logic → if (do NOT convert these)
+if val < lo { return lo }
+if cmd == "build" { runBuild() }
+```
 
 ## License
 
