@@ -387,6 +387,15 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	}
 	// @inco: len(needed) > 0, -return(content)
 
+	// 1b. Exclude identifiers that are local declarations (variables,
+	// parameters, receivers, etc.) — they look like pkg.Func but are
+	// actually var.Field / var.Method() and must not trigger an import.
+	declared := collectDeclaredNames(origFile)
+	for name := range declared {
+		delete(needed, name)
+	}
+	// @inco: len(needed) > 0, -return(content)
+
 	// 2. Determine which packages are already imported.
 	imported := make(map[string]bool)
 	for _, imp := range origFile.Imports {
@@ -516,6 +525,69 @@ func hashFile(path string) (string, error) {
 // extractIndent returns the leading whitespace of a line.
 func extractIndent(line string) string {
 	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+}
+
+// collectDeclaredNames returns names of all variables, parameters, receivers,
+// constants, and types declared in the file. These must not be mistaken for
+// package references when auto-importing (e.g. myVar.Field vs pkg.Func).
+func collectDeclaredNames(f *ast.File) map[string]bool {
+	names := make(map[string]bool)
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			if x.Recv != nil {
+				for _, field := range x.Recv.List {
+					for _, id := range field.Names {
+						names[id.Name] = true
+					}
+				}
+			}
+			collectFieldNames(x.Type.Params, names)
+			collectFieldNames(x.Type.Results, names)
+		case *ast.FuncLit:
+			collectFieldNames(x.Type.Params, names)
+			collectFieldNames(x.Type.Results, names)
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				for _, lhs := range x.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						names[id.Name] = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, id := range x.Names {
+				names[id.Name] = true
+			}
+		case *ast.TypeSpec:
+			names[x.Name.Name] = true
+		case *ast.RangeStmt:
+			if x.Tok == token.DEFINE {
+				if id, ok := x.Key.(*ast.Ident); ok {
+					names[id.Name] = true
+				}
+				if x.Value != nil {
+					if id, ok := x.Value.(*ast.Ident); ok {
+						names[id.Name] = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+// collectFieldNames adds all named fields from a field list to the set.
+func collectFieldNames(fl *ast.FieldList, names map[string]bool) {
+	if fl == nil {
+		return
+	}
+	for _, field := range fl.List {
+		for _, id := range field.Names {
+			names[id.Name] = true
+		}
+	}
 }
 
 // collectStmtLines walks the AST and returns a set of line numbers that

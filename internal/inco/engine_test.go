@@ -590,6 +590,33 @@ func Do(s string) (int, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Import injection must not fire for local variable.field
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_LocalVarNotPackage(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+type myErr struct{ Msg string }
+
+func Do() string {
+	errors := myErr{Msg: "boom"}
+	// @inco: errors.Msg != "", -panic("empty")
+	return errors.Msg
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, `"errors"`) {
+		t.Errorf("should NOT inject errors import for local var, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Deeply nested closure
 // ---------------------------------------------------------------------------
 
