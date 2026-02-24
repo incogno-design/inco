@@ -38,7 +38,11 @@ _ = err // @inco: err == nil, -panic(err)
 _ = skip // @inco: !skip, -return(filepath.SkipDir)
 ```
 
-**Always prefer standalone** when the variable is already used elsewhere in the function — it's cleaner and avoids unnecessary `_ = var`. Use the inline form **only** when a variable is exclusively referenced inside the directive; in that case `_ = var` suppresses the compiler's unused variable error. This is the **acknowledgement pattern**: you explicitly tell the compiler "I know this variable exists; its guard is handled by inco."
+**Decision rule: Is the variable used elsewhere in the function?**
+- **Yes** → use **standalone** (no `_ = var` needed)
+- **No** → use **inline** (`_ = var // @inco: ...` suppresses the unused variable error)
+
+The inline `_ = var` is the **acknowledgement pattern**: you tell the compiler "this variable exists; its guard is handled by inco."
 
 ### 3. Available Actions
 
@@ -54,13 +58,33 @@ _ = skip // @inco: !skip, -return(filepath.SkipDir)
 
 ### 4. Directive Semantics
 
-The semantics of `@inco:` is **require** — `// @inco: <expr>` is equivalent to `require <expr>`, meaning "expr must be true". When the condition is not met, the action is executed (default: panic). Generated code is `if !(<expr>) { action }`.
+The semantics of `@inco:` is **require** — `// @inco: <expr>` means "I require expr to be true". Generated code is `if !(<expr>) { action }`.
 
-Note that expressions are **positive** — write the condition you expect to hold:
+**⚠️ CRITICAL — Condition Direction:**
+
+The expression is what you **expect to hold** (the happy path), NOT the violation condition. This is the **opposite** of how `if` guards are traditionally written in Go:
+
 ```go
-// @inco: err == nil, -panic(err)    // expect no error
-// @inco: n > 0, -continue           // expect n to be positive
-// @inco: !skip, -return(filepath.SkipDir)  // expect not skipped
+// Traditional Go guard (violation condition — "what went wrong"):
+if err != nil { return nil, err }
+
+// @inco: directive (expected condition — "what must be true"):
+// @inco: err == nil, -return(nil, err)
+```
+
+**The condition is INVERTED when converting from `if` to `@inco:`.**
+
+| `if` guard writes | `@inco:` writes | Why |
+|---|---|---|
+| `err != nil` | `err == nil` | expect no error |
+| `x == nil` | `x != nil` | expect x exists |
+| `n <= 0` | `n > 0` | expect positive |
+| `!valid` | `valid` | expect valid |
+
+```go
+// @inco: err == nil, -panic(err)              // expect no error
+// @inco: n > 0, -continue                     // expect n to be positive
+// @inco: !skip, -return(filepath.SkipDir)      // expect not skipped
 ```
 
 ## File Conventions
@@ -85,37 +109,34 @@ The following paths are always skipped regardless of `.incoignore` configuration
 1. Use standalone form when the variable is used later; use inline acknowledgement (`_ = err // @inco: err == nil, -panic(err)`) only when `err` is not referenced elsewhere
 2. Use standalone form for parameter validation at function entry: `// @inco: root != ""`
 3. Use `-continue` or `-break` for filtering conditions in loops
-4. Directives can reference any available package (e.g., `fmt.Errorf`, `filepath.SkipDir`); auto-import handles it automatically
+4. Directives can reference common standard library packages (`fmt`, `errors`, `strings`, `strconv`, `os`, `io`, `filepath`, `time`, `context`, `sync`, `log`, `json`, `http`, etc.) and project dependencies; auto-import handles them automatically. Obscure stdlib packages (`unsafe`, `reflect`, `runtime`, `syscall`, `go/ast`, etc.) are NOT auto-imported
 5. **After editing code, always run `go vet ./...`** to ensure there are no unused variables or other issues. Do not leave any unused variable warnings unresolved
 6. **Do not overthink** — never repeatedly second-guess, self-doubt, or over-verify the same issue. Make a decision, apply it, and move on
-7. **Review `if` as guard clause first** — when encountering an `if` statement, first consider whether it can be expressed as a guard clause (early return, panic, continue, break). If yes, convert it to `// @inco:` instead of keeping the manual `if`
+7. **Review `if` as guard clause first** — when encountering an `if` with a single-action body (early return, panic, continue, break) and NO `else`, consider whether it is a precondition check. If yes, convert it to `// @inco:`. If it is a business logic branch, keep the `if`
 
 ### if → @inco: Conversion Templates
 
+**Remember: INVERT the condition.** The `if` checks violations; `@inco:` states expectations.
+
 ```go
-// Before:
-if err != nil { return nil, err }
-// After:
-_ = err // @inco: err == nil, -return(nil, err)
+// Before:  if err != nil { return nil, err }
+//              ^^^^^^^^ violation condition
+// After:   _ = err // @inco: err == nil, -return(nil, err)
+//                             ^^^^^^^^ expected condition (INVERTED)
 
-// Before:
-if x == nil { panic("x is nil") }
-// After:
-// @inco: x != nil, -panic("x is nil")
+// Before:  if x == nil { panic("x is nil") }
+// After:   // @inco: x != nil, -panic("x is nil")
+//                    ^^^^^^^^ INVERTED: == nil → != nil
 
-// Before:
-if !valid { continue }
-// After (if valid is NOT used later):
-_ = valid // @inco: valid, -continue
-// After (if valid IS used later — prefer standalone):
-// @inco: valid, -continue
+// Before:  if !valid { continue }
+// After (valid NOT used later): _ = valid // @inco: valid, -continue
+// After (valid IS used later):  // @inco: valid, -continue
+//                                         ^^^^^ INVERTED: !valid → valid
 
-// Before:
-if n == target { break }
-// After (if n is NOT used later):
-_ = n // @inco: n != target, -break
-// After (if n IS used later — prefer standalone):
-// @inco: n != target, -break
+// Before:  if n == target { break }
+// After (n NOT used later): _ = n // @inco: n != target, -break
+// After (n IS used later):  // @inco: n != target, -break
+//                                     ^^^^^^^^^^ INVERTED: == → !=
 ```
 
 ### Do NOT Convert These `if` Statements
