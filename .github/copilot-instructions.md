@@ -52,7 +52,7 @@ Inline 形式用于变量只在指令中使用的场景——`_ = var` 消除编
 
 ### 4. 指令语义
 
-`// @inco: <expr>` 的含义是"expr 必须为 true"。生成代码为 `if !(<expr>) { action }`。
+`@inco:` 的语义是 **require**——`// @inco: <expr>` 等价于 `require <expr>`，即"要求 expr 必须为 true"。条件不满足时执行动作（默认 panic）。生成代码为 `if !(<expr>) { action }`。
 
 注意表达式是**正向**的——写你期望成立的条件：
 ```go
