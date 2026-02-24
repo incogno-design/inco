@@ -116,6 +116,12 @@ _ = err // @if: err != nil, -panic(err)
 - Conditions with else: `if x { A } else { B }`
 - Multi-line bodies / side effects
 
+## Install
+
+```bash
+go install github.com/imnive-design/inco-go/cmd/inco@latest
+```
+
 ## Common Commands
 
 ```bash
