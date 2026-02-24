@@ -137,6 +137,10 @@ inco release clean .      # restore
 inco clean .         # delete .inco_cache/
 ```
 
+### Single-repo Distribution
+
+For single-repo projects, develop on the `inco` branch (with `.inco.go` sources) and use CI to automatically release to `main` (plain `.go` with guards baked in). See `.github/workflows/release-single-repo.yml` for an example. Consumers can `go install` / `go get` from `main` without needing inco.
+
 ## Engine Details
 
 ### Incremental Builds

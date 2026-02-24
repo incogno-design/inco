@@ -208,6 +208,58 @@ This removes each generated `foo.go` and restores `foo.inco` → `foo.inco.go`.
 - **CI/CD**: build with guards without installing `inco`
 - **One-click restore**: `inco release clean` brings you back to development mode
 
+### Single-repo distribution (CI example)
+
+If you want to develop on an `inco` branch (with `.inco.go` sources) and automatically publish released code to `main`, add a workflow like [`.github/workflows/release-single-repo.yml`](.github/workflows/release-single-repo.yml):
+
+```yaml
+name: Release inco → main
+
+on:
+  push:
+    branches: [inco]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inco
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install inco
+        run: go install github.com/imnive-design/inco-go/cmd/inco@latest
+
+      - name: Release
+        run: |
+          inco release .
+
+          # Rename remaining .inco.go files (those without directives) → .go
+          find . -name '*.inco.go' -not -path './.inco_cache/*' | while read -r f; do
+            target="${f%.inco.go}.go"
+            mv "$f" "$target"
+          done
+
+          rm -rf .inco_cache
+
+      - name: Push to main
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "release: inco@${GITHUB_SHA::7}" --allow-empty
+          git push origin HEAD:main --force
+```
+
+This gives you a clean separation: `inco` branch holds the `.inco.go` sources with directives, `main` branch always contains plain `.go` files with guards baked in — consumers can `go install` or `go get` from `main` without ever knowing about inco.
+
 ## Build from Source
 
 ```bash
