@@ -140,19 +140,15 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	}
 	var directives []directiveInfo
 
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			d := ParseDirective(c.Text)
-			_ = d // @inco: d != nil, -continue
-			fa.RequireCount++
-			if d.Negated {
-				fa.IfDirCount++
-			} else {
-				fa.IncoCount++
-			}
-			directives = append(directives, directiveInfo{pos: c.Pos()})
+	collectDirectives(f, func(c *ast.Comment, d *Directive) {
+		fa.RequireCount++
+		if d.Negated {
+			fa.IfDirCount++
+		} else {
+			fa.IncoCount++
 		}
-	}
+		directives = append(directives, directiveInfo{pos: c.Pos()})
+	})
 
 	// 2. Count if statements.
 	ast.Inspect(f, func(n ast.Node) bool {

@@ -1,6 +1,7 @@
 package inco
 
 import (
+	"go/ast"
 	"regexp"
 	"strings"
 )
@@ -83,6 +84,7 @@ func stripComment(s string) string {
 // splitTopLevel splits s by top-level commas, respecting nested parens,
 // brackets, braces, double-quoted strings, and raw strings (backtick).
 func splitTopLevel(s string) []string {
+
 	var result []string
 	depth := 0
 	start := 0
@@ -119,4 +121,71 @@ func splitTopLevel(s string) []string {
 		result = append(result, last)
 	}
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// AST helpers
+// ---------------------------------------------------------------------------
+
+// collectDeclCommentGroups returns the set of comment groups that are attached
+// to declarations — both doc comments (.Doc) and trailing line comments
+// (.Comment). These must be skipped when scanning for directives, because
+// they may contain directive-like syntax in documentation or decorative
+// comments (e.g. struct field annotations).
+func collectDeclCommentGroups(f *ast.File) map[*ast.CommentGroup]bool {
+	groups := make(map[*ast.CommentGroup]bool)
+	if f.Doc != nil {
+		groups[f.Doc] = true
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.GenDecl:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+		case *ast.TypeSpec:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+			if x.Comment != nil {
+				groups[x.Comment] = true
+			}
+		case *ast.Field:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+			if x.Comment != nil {
+				groups[x.Comment] = true
+			}
+		case *ast.ValueSpec:
+			if x.Doc != nil {
+				groups[x.Doc] = true
+			}
+			if x.Comment != nil {
+				groups[x.Comment] = true
+			}
+		}
+		return true
+	})
+	return groups
+}
+
+// collectDirectives iterates over all comments in f, skips doc comment
+// groups, parses each as a directive, and calls fn for every valid match.
+// This is the shared scanning logic used by both engine and audit.
+func collectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
+	declGroups := collectDeclCommentGroups(f)
+	_ = declGroups
+	for _, cg := range f.Comments {
+		// @inco: !declGroups[cg], -continue
+		for _, c := range cg.List {
+			d := ParseDirective(c.Text)
+			_ = d // @inco: d != nil, -continue
+			fn(c, d)
+		}
+	}
 }
