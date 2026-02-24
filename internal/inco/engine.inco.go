@@ -384,6 +384,11 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 				needed[match[1]] = true
 			}
 		}
+		// -log generates log.Println(...) — the "log" package reference
+		// is not in the directive args, so we must add it explicitly.
+		if d.Action == ActionLog {
+			needed["log"] = true
+		}
 	}
 	// @inco: len(needed) > 0, -return(content)
 

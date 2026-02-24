@@ -617,6 +617,33 @@ func Do() string {
 }
 
 // ---------------------------------------------------------------------------
+// Import injection — -log action must inject "log" package
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_LogAction(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0, -log("x must be positive")
+	_ = x
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, `"log"`) {
+		t.Errorf("should inject log import for -log action, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, `log.Println(`) {
+		t.Errorf("should contain log.Println call, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Deeply nested closure
 // ---------------------------------------------------------------------------
 
