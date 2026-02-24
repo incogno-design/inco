@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   release:
+    if: github.repository == 'imnive-design/inco'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
