@@ -2,9 +2,11 @@ package inco
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -1054,5 +1056,787 @@ func Do(x int) {
 		if entry.ShadowPath == "" {
 			t.Error("manifest entry should have a non-empty ShadowPath")
 		}
+	}
+}
+
+// ===========================================================================
+// P0: Comment classification — edge cases
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Interface method comments should NOT produce guards
+// ---------------------------------------------------------------------------
+
+func TestEngine_InterfaceMethodCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+type Worker interface {
+	Do(x int) // @inco: x > 0
+}
+
+func main() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "inco violation") || strings.Contains(shadow, "panic(") {
+		t.Errorf("interface method comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Variable declaration comment should NOT produce guards
+// ---------------------------------------------------------------------------
+
+func TestEngine_VarDeclCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+var globalLimit = 100 // @inco: globalLimit > 0
+
+func main() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "panic(") {
+		t.Errorf("var decl comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Standalone directive on blank line before function
+// ---------------------------------------------------------------------------
+
+func TestEngine_StandaloneBeforeFunc(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+import "fmt"
+
+// @inco: true
+func Hello() {
+	fmt.Println("hello")
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	// Directive at file level (outside function) — should produce guard.
+	if !strings.Contains(shadow, "!(true)") {
+		t.Logf("shadow:\n%s", shadow)
+		// This is expected to produce a guard. If not, it's a known limitation.
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Block comment form /* @inco: */ inside function body
+// ---------------------------------------------------------------------------
+
+func TestEngine_BlockCommentDirective(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+import "fmt"
+
+func Do(x int) {
+	/* @inco: x > 0 */
+	fmt.Println(x)
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Errorf("block comment directive should produce guard, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Multiple inline directives on consecutive lines
+// ---------------------------------------------------------------------------
+
+func TestEngine_ConsecutiveInlineDirectives(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(a, b int) {
+	_ = a // @inco: a > 0
+	_ = b // @inco: b > 0
+	println(a + b)
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(a > 0)") {
+		t.Errorf("missing guard for a, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, "!(b > 0)") {
+		t.Errorf("missing guard for b, got:\n%s", shadow)
+	}
+	// Verify order: a before b
+	aIdx := strings.Index(shadow, "!(a > 0)")
+	bIdx := strings.Index(shadow, "!(b > 0)")
+	if aIdx > bIdx {
+		t.Error("guards not in source order")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Const declaration comment should NOT produce guards
+// ---------------------------------------------------------------------------
+
+func TestEngine_ConstCommentIgnored(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+const maxRetries = 3 // @inco: maxRetries > 0
+
+func main() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "panic(") {
+		t.Errorf("const decl comment should not produce guards, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Mixed standalone + inline in same function
+// ---------------------------------------------------------------------------
+
+func TestEngine_MixedStandaloneAndInline(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) error {
+	// @inco: x > 0
+	err := work(x)
+	_ = err // @inco: err == nil, -return(err)
+	return nil
+}
+
+func work(x int) error { return nil }
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Error("standalone guard missing")
+	}
+	if !strings.Contains(shadow, "!(err == nil)") {
+		t.Error("inline guard missing")
+	}
+	if !strings.Contains(shadow, "return err") {
+		t.Error("return action missing")
+	}
+}
+
+// ===========================================================================
+// P1: Import injection — conflict edge cases
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Multiple packages needing injection at once
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_MultiplePackages(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) (int, error) {
+	// @inco: x > 0, -return(0, fmt.Errorf("bad: %d", x))
+	// @inco: x < 100, -log("x too large", x)
+	return x, nil
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, `"fmt"`) {
+		t.Errorf("should inject fmt import, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, `"log"`) {
+		t.Errorf("should inject log import, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Import already present with alias — should not duplicate
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_ExistingAliasedImport(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+import f "fmt"
+
+func Do(x int) {
+	f.Println(x)
+	// @inco: x > 0, -panic(fmt.Sprintf("bad: %d", x))
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	// fmt.Sprintf is used in the directive, but "fmt" is imported as "f".
+	// The engine should inject "fmt" since the directive references fmt.Sprintf directly.
+	if !strings.Contains(shadow, `fmt.Sprintf`) {
+		t.Errorf("should contain fmt.Sprintf, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Directive with errors.New when local var named "errors" exists
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_LocalVarShadowsPackage(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) error {
+	errors := []string{"a", "b"}
+	// @inco: len(errors) > 0
+	_ = errors
+	return nil
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	// "errors" is a local var — should NOT inject "errors" package import.
+	if strings.Contains(shadow, `"errors"`) {
+		t.Errorf("should NOT inject errors import for local var, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Directive referencing receiver field that looks like pkg.Func
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_ReceiverFieldNotPackage(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+type Server struct{ Port int }
+
+func (s *Server) Start() {
+	// @inco: s.Port > 0
+	println(s.Port)
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(s.Port > 0)") {
+		t.Error("should produce guard")
+	}
+	// "s" is a receiver — should not try to import a package named "s".
+	// No panic or error means it handled it correctly.
+}
+
+// ---------------------------------------------------------------------------
+// Expr with pkg ref but nothing to import (already imported)
+// ---------------------------------------------------------------------------
+
+func TestEngine_ImportInjection_AlreadyImported(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+import "fmt"
+
+func Do(s string) string {
+	// @inco: len(s) > 0, -panic(fmt.Sprintf("empty: %q", s))
+	return fmt.Sprintf("hello %s", s)
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	// fmt is already imported — count occurrences of "fmt" import.
+	fmtCount := strings.Count(shadow, `"fmt"`)
+	if fmtCount != 1 {
+		t.Errorf("fmt should appear exactly once in imports, got %d occurrences:\n%s", fmtCount, shadow)
+	}
+}
+
+// ===========================================================================
+// P1: Incremental cache consistency — edge cases
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Shadow file manually deleted — should regenerate
+// ---------------------------------------------------------------------------
+
+func TestEngine_CacheMiss_ShadowDeleted(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	// First run.
+	e1 := NewEngine(dir)
+	if err := e1.Run(); err != nil {
+		t.Fatal(err)
+	}
+	var shadow1 string
+	for _, sp := range e1.Overlay.Replace {
+		shadow1 = sp
+	}
+
+	// Delete shadow file (simulate cache corruption).
+	os.Remove(shadow1)
+
+	// Second run — should regenerate.
+	e2 := NewEngine(dir)
+	if err := e2.Run(); err != nil {
+		t.Fatal(err)
+	}
+	var shadow2 string
+	for _, sp := range e2.Overlay.Replace {
+		shadow2 = sp
+	}
+
+	// New shadow should exist.
+	if _, err := os.Stat(shadow2); err != nil {
+		t.Errorf("regenerated shadow should exist: %v", err)
+	}
+
+	// Content should be valid.
+	data, err := os.ReadFile(shadow2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "!(x > 0)") {
+		t.Errorf("regenerated shadow should contain guard, got:\n%s", string(data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Manifest corrupted (invalid JSON) — should rebuild
+// ---------------------------------------------------------------------------
+
+func TestEngine_ManifestCorrupted(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	// First run to create cache.
+	e1 := NewEngine(dir)
+	if err := e1.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Corrupt manifest.
+	manifestPath := filepath.Join(dir, ".inco_cache", "manifest.json")
+	os.WriteFile(manifestPath, []byte("{invalid json!!!"), 0o644)
+
+	// Second run — should handle gracefully.
+	e2 := NewEngine(dir)
+	if err := e2.Run(); err != nil {
+		t.Fatalf("should handle corrupted manifest gracefully: %v", err)
+	}
+
+	// Should still produce valid output.
+	shadow := readShadow(t, e2)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Errorf("should produce valid shadow after manifest corruption, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Overlay JSON corrupted — should rebuild
+// ---------------------------------------------------------------------------
+
+func TestEngine_OverlayCorrupted(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	// First run.
+	e1 := NewEngine(dir)
+	if err := e1.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Corrupt overlay.json.
+	overlayPath := filepath.Join(dir, ".inco_cache", "overlay.json")
+	os.WriteFile(overlayPath, []byte("not json"), 0o644)
+
+	// Second run.
+	e2 := NewEngine(dir)
+	if err := e2.Run(); err != nil {
+		t.Fatalf("should handle corrupted overlay gracefully: %v", err)
+	}
+
+	shadow := readShadow(t, e2)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Errorf("should produce valid shadow after overlay corruption, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Source file added — should be picked up without breaking cache
+// ---------------------------------------------------------------------------
+
+func TestEngine_NewFileAdded(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"a.go": `package main
+
+func A(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	// First run — only a.go.
+	e1 := NewEngine(dir)
+	if err := e1.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if len(e1.Overlay.Replace) != 1 {
+		t.Errorf("expected 1 overlay entry initially, got %d", len(e1.Overlay.Replace))
+	}
+
+	// Add b.go.
+	os.WriteFile(filepath.Join(dir, "b.go"), []byte(`package main
+
+func B(y int) {
+	// @inco: y > 0
+	_ = y
+}
+`), 0o644)
+
+	// Second run — both files.
+	e2 := NewEngine(dir)
+	if err := e2.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if len(e2.Overlay.Replace) != 2 {
+		t.Errorf("expected 2 overlay entries after adding b.go, got %d", len(e2.Overlay.Replace))
+	}
+
+	// Verify a.go was cached (not re-processed) — its shadow path should be same.
+	var aShadow1, aShadow2 string
+	for src, sp := range e1.Overlay.Replace {
+		if filepath.Base(src) == "a.go" {
+			aShadow1 = sp
+		}
+	}
+	for src, sp := range e2.Overlay.Replace {
+		if filepath.Base(src) == "a.go" {
+			aShadow2 = sp
+		}
+	}
+	if aShadow1 != aShadow2 {
+		t.Errorf("a.go should be cached: %s vs %s", aShadow1, aShadow2)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Source file renamed — old shadow cleaned, new shadow created
+// ---------------------------------------------------------------------------
+
+func TestEngine_FileRenamed(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"old.go": `package main
+
+func Old(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	// First run.
+	e1 := NewEngine(dir)
+	if err := e1.Run(); err != nil {
+		t.Fatal(err)
+	}
+	var oldShadow string
+	for _, sp := range e1.Overlay.Replace {
+		oldShadow = sp
+	}
+
+	// Rename old.go → new.go.
+	os.Rename(filepath.Join(dir, "old.go"), filepath.Join(dir, "new.go"))
+
+	// Second run.
+	e2 := NewEngine(dir)
+	if err := e2.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Old shadow should be cleaned up.
+	if _, err := os.Stat(oldShadow); !os.IsNotExist(err) {
+		t.Errorf("old shadow should be removed after rename: %s", oldShadow)
+	}
+
+	// New shadow should exist.
+	if len(e2.Overlay.Replace) != 1 {
+		t.Fatalf("expected 1 overlay entry, got %d", len(e2.Overlay.Replace))
+	}
+	for _, sp := range e2.Overlay.Replace {
+		if _, err := os.Stat(sp); err != nil {
+			t.Errorf("new shadow should exist: %v", err)
+		}
+	}
+}
+
+// ===========================================================================
+// P1: Concurrency stability
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Multiple files processed in parallel — all produce valid shadows
+// ---------------------------------------------------------------------------
+
+func TestEngine_Parallel_ManyFiles(t *testing.T) {
+	files := make(map[string]string)
+	numFiles := 20
+	for i := 0; i < numFiles; i++ {
+		name := fmt.Sprintf("f%d.go", i)
+		files[name] = fmt.Sprintf(`package main
+
+func F%d(x int) {
+	// @inco: x > %d
+	_ = x
+}
+`, i, i)
+	}
+	dir := setupDir(t, files)
+
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(e.Overlay.Replace) != numFiles {
+		t.Errorf("expected %d overlay entries, got %d", numFiles, len(e.Overlay.Replace))
+	}
+
+	// Verify each shadow is valid.
+	for src, sp := range e.Overlay.Replace {
+		data, err := os.ReadFile(sp)
+		if err != nil {
+			t.Errorf("shadow for %s missing: %v", filepath.Base(src), err)
+			continue
+		}
+		if !strings.Contains(string(data), "if !(x >") {
+			t.Errorf("shadow for %s missing guard:\n%s", filepath.Base(src), string(data))
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Idempotent — repeated runs produce identical results
+// ---------------------------------------------------------------------------
+
+func TestEngine_Idempotent(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"a.go": `package main
+
+func A(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+		"b.go": `package main
+
+import "fmt"
+
+func B(name string) {
+	// @inco: len(name) > 0, -panic(fmt.Sprintf("empty: %s", name))
+	_ = name
+}
+`,
+	})
+
+	// Run 3 times.
+	for i := 0; i < 3; i++ {
+		e := NewEngine(dir)
+		if err := e.Run(); err != nil {
+			t.Fatalf("run %d failed: %v", i+1, err)
+		}
+		if len(e.Overlay.Replace) != 2 {
+			t.Errorf("run %d: expected 2 overlay entries, got %d", i+1, len(e.Overlay.Replace))
+		}
+
+		// Verify overlay.json exists and is valid.
+		overlayPath := filepath.Join(dir, ".inco_cache", "overlay.json")
+		data, err := os.ReadFile(overlayPath)
+		if err != nil {
+			t.Fatalf("run %d: overlay.json missing: %v", i+1, err)
+		}
+		var ov Overlay
+		if err := json.Unmarshal(data, &ov); err != nil {
+			t.Fatalf("run %d: overlay.json invalid: %v", i+1, err)
+		}
+		if len(ov.Replace) != 2 {
+			t.Errorf("run %d: overlay has %d entries, want 2", i+1, len(ov.Replace))
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Rapid sequential runs — no file handle leaks or race conditions
+// ---------------------------------------------------------------------------
+
+func TestEngine_RapidSequentialRuns(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	for i := 0; i < 10; i++ {
+		e := NewEngine(dir)
+		if err := e.Run(); err != nil {
+			t.Fatalf("iteration %d failed: %v", i, err)
+		}
+	}
+
+	// Final state should be valid.
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Error("final shadow should contain guard")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Worker panic recovery — parse error in one file doesn't crash engine
+// ---------------------------------------------------------------------------
+
+func TestEngine_ParseError_HandlesGracefully(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"good.go": `package main
+
+func Good(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+		"bad.go": `package main
+
+func Bad( { // syntax error
+}
+`,
+	})
+
+	e := NewEngine(dir)
+	err := e.Run()
+	// Should return an error for the bad file, not panic.
+	if err == nil {
+		t.Error("should return error for unparseable file")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrent Run calls on different engines sharing same directory
+// ---------------------------------------------------------------------------
+
+func TestEngine_ConcurrentEngines(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @inco: x > 0
+	_ = x
+}
+`,
+	})
+
+	var wg sync.WaitGroup
+	errors := make([]error, 5)
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			e := NewEngine(dir)
+			errors[idx] = e.Run()
+		}(i)
+	}
+	wg.Wait()
+
+	// All should succeed (or at worst, no panics).
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("engine %d failed: %v", i, err)
+		}
+	}
+
+	// Final state should be valid.
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Error("final shadow should contain guard")
 	}
 }

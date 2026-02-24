@@ -307,3 +307,218 @@ func TestSplitTopLevel(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// splitTopLevel — deep nesting & edge cases (P0 corner case tests)
+// ---------------------------------------------------------------------------
+
+func TestSplitTopLevel_DeepNesting(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			"triple nested",
+			`f(g(h(x, y), z), w), k`,
+			[]string{`f(g(h(x, y), z), w)`, "k"},
+		},
+		{
+			"mixed bracket types",
+			`m[k], f(a, b), s{x: 1}`,
+			[]string{"m[k]", "f(a, b)", "s{x: 1}"},
+		},
+		{
+			"string with parens",
+			`"f(x,y)", z`,
+			[]string{`"f(x,y)"`, "z"},
+		},
+		{
+			"raw string with parens",
+			"`f(x,y)`, z",
+			[]string{"`f(x,y)`", "z"},
+		},
+		{
+			"nested quotes in func",
+			`fmt.Sprintf("a=%d, b=%d", a, b), c`,
+			[]string{`fmt.Sprintf("a=%d, b=%d", a, b)`, "c"},
+		},
+		{
+			"empty string arg",
+			`"", x`,
+			[]string{`""`, "x"},
+		},
+		{
+			"whitespace only",
+			"  ",
+			nil,
+		},
+		{
+			"single whitespace-padded",
+			"  x  ",
+			[]string{"x"},
+		},
+		{
+			"map literal with nested braces",
+			`map[string]int{"a": 1, "b": 2}, ok`,
+			[]string{`map[string]int{"a": 1, "b": 2}`, "ok"},
+		},
+		{
+			"escaped backslash then comma",
+			`"a\\", "b"`,
+			[]string{`"a\\"`, `"b"`},
+		},
+		{
+			"raw string with backtick-like content",
+			"`hello\nworld`, rest",
+			[]string{"`hello\nworld`", "rest"},
+		},
+		{
+			"4-level nesting",
+			`a(b(c(d(1, 2), 3), 4), 5)`,
+			[]string{"a(b(c(d(1, 2), 3), 4), 5)"},
+		},
+		{
+			"consecutive string args",
+			`"a", "b", "c"`,
+			[]string{`"a"`, `"b"`, `"c"`},
+		},
+		{
+			"bracket inside string",
+			`"m[k]", v`,
+			[]string{`"m[k]"`, "v"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := splitTopLevel(c.input)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("splitTopLevel(%q) = %v, want %v", c.input, got, c.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ParseDirective — complex nesting (P0 corner case tests)
+// ---------------------------------------------------------------------------
+
+func TestParseDirective_DeeplyNestedExpr(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		expr   string
+		action ActionKind
+		args   []string
+	}{
+		{
+			"triple nested func call in expr",
+			"// @inco: f(g(h(x, y), z)) > 0",
+			"f(g(h(x, y), z)) > 0",
+			ActionPanic,
+			nil,
+		},
+		{
+			"triple nested with action",
+			`// @inco: f(g(h(x, y), z)) > 0, -return(-1)`,
+			"f(g(h(x, y), z)) > 0",
+			ActionReturn,
+			[]string{"-1"},
+		},
+		{
+			"fmt.Sprintf inside return args",
+			`// @inco: x > 0, -return(0, fmt.Errorf("val=%d, limit=%d", x, limit))`,
+			"x > 0",
+			ActionReturn,
+			[]string{"0", `fmt.Errorf("val=%d, limit=%d", x, limit)`},
+		},
+		{
+			"comma in quoted string in panic",
+			`// @inco: x > 0, -panic(fmt.Sprintf("x=%d, want>0", x))`,
+			"x > 0",
+			ActionPanic,
+			[]string{`fmt.Sprintf("x=%d, want>0", x)`},
+		},
+		{
+			"multi-arg return with nested calls",
+			`// @inco: ok, -return(nil, wrap(inner(a, b), "msg"))`,
+			"ok",
+			ActionReturn,
+			[]string{"nil", `wrap(inner(a, b), "msg")`},
+		},
+		{
+			"log with multiple complex args",
+			`// @inco: n > 0, -log("count is", n, fmt.Sprintf("(%d)", n))`,
+			"n > 0",
+			ActionLog,
+			[]string{`"count is"`, "n", `fmt.Sprintf("(%d)", n)`},
+		},
+		{
+			"expr with type assertion",
+			`// @inco: v.(type) != nil, -panic("type assertion failed")`,
+			"v.(type) != nil",
+			ActionPanic,
+			[]string{`"type assertion failed"`},
+		},
+		{
+			"boolean expression with multiple ops",
+			`// @inco: a != nil && b != nil && len(c) > 0, -return(ErrInvalid)`,
+			"a != nil && b != nil && len(c) > 0",
+			ActionReturn,
+			[]string{"ErrInvalid"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := ParseDirective(c.input)
+			if d == nil {
+				t.Fatal("got nil")
+			}
+			if d.Expr != c.expr {
+				t.Errorf("Expr = %q, want %q", d.Expr, c.expr)
+			}
+			if d.Action != c.action {
+				t.Errorf("Action = %v, want %v", d.Action, c.action)
+			}
+			if c.args == nil {
+				if len(d.ActionArgs) != 0 {
+					t.Errorf("ActionArgs = %v, want empty", d.ActionArgs)
+				}
+			} else if !reflect.DeepEqual(d.ActionArgs, c.args) {
+				t.Errorf("ActionArgs = %v, want %v", d.ActionArgs, c.args)
+			}
+		})
+	}
+}
+
+// TestParseDirective_ActionLikeInString verifies that strings containing
+// patterns resembling actions (e.g. "-return" in a string literal) are
+// handled correctly.
+func TestParseDirective_ActionLikeInString(t *testing.T) {
+	// The -return inside the string is at depth>0 (inside Sprintf parens),
+	// so actionRe should NOT match it as a separator.
+	d := ParseDirective(`// @inco: x > 0, -panic(fmt.Sprintf("-return(%d)", x))`)
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Action != ActionPanic {
+		t.Errorf("Action = %v, want ActionPanic", d.Action)
+	}
+	if d.Expr != "x > 0" {
+		t.Errorf("Expr = %q, want %q", d.Expr, "x > 0")
+	}
+}
+
+// TestParseDirective_TrailingWhitespace ensures trailing spaces don't break parsing.
+func TestParseDirective_TrailingWhitespace(t *testing.T) {
+	d := ParseDirective("// @inco: x > 0, -return(1)   ")
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Expr != "x > 0" {
+		t.Errorf("Expr = %q", d.Expr)
+	}
+	if d.Action != ActionReturn {
+		t.Errorf("Action = %v", d.Action)
+	}
+}
