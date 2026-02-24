@@ -24,6 +24,19 @@ jobs:
       - name: Install inco
         run: go install github.com/imnive-design/inco-go/cmd/inco@latest
 
+      - name: Smoke test — self-bootstrap
+        run: |
+          # Bootstrap: build inco from source without overlay
+          go build -o /tmp/inco-smoke ./cmd/inco
+
+          # Use the bootstrapped binary to gen + build itself
+          /tmp/inco-smoke gen .
+          /tmp/inco-smoke build -o /tmp/inco-smoke2 ./cmd/inco
+
+          # Clean up overlay so release starts fresh
+          rm -rf .inco_cache
+          echo "release: self-bootstrap smoke test passed"
+
       - name: Release
         run: |
           # Generate overlay and release .inco.go → .go (with guards)
@@ -48,16 +61,6 @@ jobs:
         run: |
           go test ./...
           echo "release: test verification passed"
-
-      - name: Smoke test — self-bootstrap
-        run: |
-          # Build an inco binary from the released (plain Go) code
-          go build -o /tmp/inco-smoke ./cmd/inco
-
-          # Use the binary to gen + build itself — the strictest self-hosting check
-          /tmp/inco-smoke gen .
-          /tmp/inco-smoke build -o /tmp/inco-smoke2 ./cmd/inco
-          echo "release: self-bootstrap smoke test passed"
 
       - name: Push to main
         run: |

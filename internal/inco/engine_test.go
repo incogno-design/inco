@@ -690,6 +690,44 @@ func Custom() {}
 	}
 }
 
+func TestEngine_ImportInjection_LogAction_ConflictingImport(t *testing.T) {
+	// When the source file already imports a non-stdlib "log" package,
+	// the -log action must inject stdlib "log" with an alias (_inco_log)
+	// and rewrite log.Println → _inco_log.Println to avoid collision.
+	dir := setupDir(t, map[string]string{
+		"go.mod": "module testmod\n\ngo 1.21\n",
+		"main.go": `package main
+
+import "testmod/log"
+
+func Do(x int) {
+	log.Custom()
+	// @inco: x > 0, -log("x must be positive")
+	_ = x
+}
+`,
+		"log/log.go": `package log
+
+func Custom() {}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadowFor(t, e, "main.go")
+	if !strings.Contains(shadow, `_inco_log "log"`) {
+		t.Errorf("should inject aliased stdlib log import, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, `_inco_log.Println(`) {
+		t.Errorf("should rewrite to _inco_log.Println, got:\n%s", shadow)
+	}
+	// Original log.Custom() must NOT be rewritten.
+	if strings.Contains(shadow, `_inco_log.Custom()`) {
+		t.Errorf("should not rewrite original log.Custom() call, got:\n%s", shadow)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Deeply nested closure
 // ---------------------------------------------------------------------------

@@ -226,6 +226,33 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 		}
 	}
 
+	// 3b. Determine the effective package name for -log action.
+	//     If the file already imports a non-stdlib "log", we'll need an alias.
+	logPkgName := "log"
+	hasLogAction := false
+	for _, d := range directives {
+		if d.Action == ActionLog {
+			hasLogAction = true
+			break
+		}
+	}
+	if hasLogAction {
+		for _, imp := range f.Imports {
+			impPath := strings.Trim(imp.Path.Value, `"`)
+			var name string
+			if imp.Name != nil {
+				name = imp.Name.Name
+			} else {
+				parts := strings.Split(impPath, "/")
+				name = parts[len(parts)-1]
+			}
+			if name == "log" && impPath != "log" {
+				logPkgName = "_inco_log"
+				break
+			}
+		}
+	}
+
 	// 4. Build output.
 	var output []string
 	prevWasDirective := false
@@ -236,12 +263,12 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 		if d, ok := standalone[lineNum]; ok {
 			indent := extractIndent(line)
 			output = append(output, fmt.Sprintf("//line %s:%d", path, lineNum))
-			output = append(output, e.generateIfBlock(d, indent, path, lineNum))
+			output = append(output, e.generateIfBlock(d, indent, path, lineNum, logPkgName))
 			prevWasDirective = true
 		} else if d, ok := inline[lineNum]; ok {
 			output = append(output, line)
 			indent := extractIndent(line)
-			output = append(output, e.generateIfBlock(d, indent, path, lineNum))
+			output = append(output, e.generateIfBlock(d, indent, path, lineNum, logPkgName))
 			prevWasDirective = true
 		} else {
 			if prevWasDirective {
@@ -268,9 +295,9 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 //	if !(expr) {
 //	    panic(...)
 //	}
-func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int) string {
+func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int, logPkgName string) string {
 	cond := fmt.Sprintf("!(%s)", d.Expr)
-	body := e.buildPanicBody(d, path, line)
+	body := e.buildPanicBody(d, path, line, logPkgName)
 	return fmt.Sprintf("%sif %s {\n%s\t%s\n%s}", indent, cond, indent, body, indent)
 }
 
@@ -283,7 +310,7 @@ func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int) st
 //   - ActionBreak         → break
 //   - ActionPanic + args  → panic(arg)
 //   - ActionPanic default → panic("inco violation: <expr> (at file:line)")
-func (e *Engine) buildPanicBody(d *Directive, path string, line int) string {
+func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName string) string {
 	switch d.Action {
 	case ActionReturn:
 		if len(d.ActionArgs) > 0 {
@@ -297,7 +324,7 @@ func (e *Engine) buildPanicBody(d *Directive, path string, line int) string {
 	case ActionDo:
 		return strings.Join(d.ActionArgs, "; ")
 	case ActionLog:
-		return "log.Println(" + strings.Join(d.ActionArgs, ", ") + ")"
+		return logPkgName + ".Println(" + strings.Join(d.ActionArgs, ", ") + ")"
 	default: // ActionPanic
 		if len(d.ActionArgs) > 0 {
 			return "panic(" + d.ActionArgs[0] + ")"
@@ -411,6 +438,7 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 
 	// 2. Determine which packages are already imported.
 	imported := make(map[string]bool)
+	importedPaths := make(map[string]string) // name → import path
 	for _, imp := range origFile.Imports {
 		path := strings.Trim(imp.Path.Value, `"`)
 		// Use local name if aliased, otherwise last segment.
@@ -422,13 +450,29 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 			name = parts[len(parts)-1]
 		}
 		imported[name] = true
+		importedPaths[name] = path
 	}
 
 	// 3. Find which needed packages are missing.
 	importMap := e.buildImportMap()
 	var toAdd []string
+	// aliases maps package short name → alias when the source file
+	// already imports a different package with the same short name.
+	// e.g. "log" → "_inco_log" when the file imports "mymod/log"
+	// but inco needs stdlib "log" for -log action.
+	aliases := make(map[string]string)
 	for pkg := range needed {
-		// @inco: !imported[pkg], -continue
+		if imported[pkg] {
+			// Already imported — check if it's the same package we need.
+			if kp, ok := knownPaths[pkg]; ok && importedPaths[pkg] != kp {
+				// Conflict: file imports a different "log" package.
+				// Use alias to inject stdlib alongside it.
+				alias := "_inco_" + pkg
+				aliases[pkg] = alias
+				toAdd = append(toAdd, pkg)
+			}
+			continue
+		}
 		if _, ok := knownPaths[pkg]; ok {
 			toAdd = append(toAdd, pkg)
 		} else if _, ok := importMap[pkg]; ok {
@@ -442,7 +486,9 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	shadowAST, err := parser.ParseFile(fset, "", content, parser.ParseComments)
 	_ = err // @inco: err == nil, -return(content)
 	for _, pkg := range toAdd {
-		if path, ok := knownPaths[pkg]; ok {
+		if alias, ok := aliases[pkg]; ok {
+			astutil.AddNamedImport(fset, shadowAST, alias, knownPaths[pkg])
+		} else if path, ok := knownPaths[pkg]; ok {
 			astutil.AddImport(fset, shadowAST, path)
 		} else {
 			astutil.AddImport(fset, shadowAST, importMap[pkg])
