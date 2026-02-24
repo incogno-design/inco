@@ -38,6 +38,16 @@ jobs:
           # Clean up cache and dev-only files
           rm -rf .inco_cache
 
+      - name: Verify released code compiles
+        run: |
+          go build ./...
+          echo "inco-go: build verification passed"
+
+      - name: Verify released tests pass
+        run: |
+          go test ./...
+          echo "inco-go: test verification passed"
+
       - name: Push to inco-go
         env:
           INCO_GO_TOKEN: ${{ secrets.INCO_GO_TOKEN }}
