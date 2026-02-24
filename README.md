@@ -20,6 +20,10 @@ When every defensive check is a directive, the remaining `if` statements carry *
 
 ## Directive Syntax
 
+Two prefixes — `@inco:` (contract, condition inverted) and `@if:` (guard, same as `if`).
+
+`@inco:` is the core — write the condition you expect to hold, inco generates the inverse guard. `@if:` exists to lower the migration barrier: existing `if` guard clauses can be converted to directives with zero mental overhead — just copy the condition as-is.
+
 Two forms — **standalone** and **inline**:
 
 ### Standalone (entire line is directive)
@@ -28,18 +32,18 @@ Two forms — **standalone** and **inline**:
 // @inco: <expr>
 // @inco: <expr>, -panic("msg")
 // @inco: <expr>, -return(values...)
-// @inco: <expr>, -continue
-// @inco: <expr>, -break
+// @if: <expr>, -continue
+// @if: <expr>, -break
 ```
 
 ### Inline (code + trailing directive)
 
 ```go
-_ = err // @inco: err == nil, -panic(err)
+_ = err // @if: err != nil, -panic(err)
 _ = skip // @inco: !skip, -return(filepath.SkipDir)
 ```
 
-Inline directives attach to a code statement via `// @inco:` at the end of the line. The engine uses AST analysis to distinguish inline directives from decorative comments (e.g. struct field comments are ignored).
+Inline directives attach to a code statement at the end of the line. The engine uses AST analysis to distinguish inline directives from decorative comments (e.g. struct field comments are ignored).
 
 The default action is `-panic` with an auto-generated message.
 
@@ -66,14 +70,15 @@ Five directives, each expressing a precondition the caller must satisfy. No `if`
 
 ### Directive Semantics
 
-The semantics of `@inco:` is **require** — `// @inco: <expr>` is equivalent to `require <expr>`, meaning "expr must be true". When the condition is not met, the action is executed (default: panic). Generated code is `if !(<expr>) { action }`.
+`@inco:` is a **contract** — "I expect this to hold". Generated code is `if !(<expr>) { action }`. Write the condition you expect to be true. This is the idiomatic way to express preconditions in Inco.
 
-Expressions are **positive** — write the condition you expect to hold:
+`@if:` is a **migration helper** — same condition as `if`. Generated code is `if <expr> { action }`. When migrating an existing codebase, `if err != nil { return err }` becomes `// @if: err != nil, -return(err)` with no condition inversion needed.
 
 ```go
-// @inco: err == nil, -panic(err)    // require: no error
-// @inco: n > 0, -continue           // require: n is positive
-// @inco: !skip, -return(filepath.SkipDir)  // require: not skipped
+// @inco: err == nil, -panic(err)    // contract: I expect no error
+// @inco: n > 0, -continue           // contract: n must be positive
+// @if: err != nil, -return(err)     // guard: if error, return
+// @if: x == nil, -panic("x nil")    // guard: if nil, panic
 ```
 
 ### Actions
@@ -82,11 +87,11 @@ Expressions are **positive** — write the condition you expect to hold:
 |--------|--------|---------|
 | panic (default) | `// @inco: <expr>` | Panic with auto message |
 | panic (custom) | `// @inco: <expr>, -panic("msg")` | Panic with custom message |
-| return | `// @inco: <expr>, -return(vals...)` | Return specified values |
-| return (bare) | `// @inco: <expr>, -return` | Bare return |
-| continue | `// @inco: <expr>, -continue` | Continue enclosing loop |
-| break | `// @inco: <expr>, -break` | Break enclosing loop |
-| log | `// @inco: <expr>, -log(args...)` | log.Println(args...) |
+| return | `// @if: <expr>, -return(vals...)` | Return specified values |
+| return (bare) | `// @if: <expr>, -return` | Bare return |
+| continue | `// @if: <expr>, -continue` | Continue enclosing loop |
+| break | `// @if: <expr>, -break` | Break enclosing loop |
+| log | `// @if: <expr>, -log(args...)` | log.Println(args...) |
 
 ### Generated Output
 
@@ -173,7 +178,7 @@ inco clean [dir]
 Name source files that contain directives with a `.inco.go` extension:
 
 ```
-foo.inco.go   ← source with @inco: directives
+foo.inco.go   ← source with @inco:/@if: directives
 ```
 
 `inco gen` and `inco build` treat `.inco.go` files exactly like `.go` files (they end in `.go`, so the scanner picks them up).
@@ -289,10 +294,10 @@ make install    # Install to $GOPATH/bin
 
 `inco audit` scans your codebase and reports:
 
-- **@inco: coverage**: percentage of functions guarded by at least one `@inco:` directive
-- **inco/(if+inco) ratio**: what fraction of all conditional guards are `@inco:` directives
+- **@inco: coverage**: percentage of functions guarded by at least one directive
+- **inco/(if+inco) ratio**: what fraction of all conditional guards are directives
 - **Per-file breakdown**: directive count, `if` count, function count, and guarded function count per file
-- **Unguarded functions**: list of functions without any `@inco:` directive (closures excluded)
+- **Unguarded functions**: list of functions without any directive (closures excluded)
 - **Ignored files**: files/dirs excluded by `.incoignore`
 
 Test files (`_test.go`), hidden directories, `vendor/`, and `testdata/` are always skipped.
@@ -333,11 +338,11 @@ Ignored by .incoignore (4):
   example/transfer.inco.go
 ```
 
-The `inco/(if+inco)` ratio reflects the degree of separation between guards and business logic — **higher is not necessarily better**. A ratio that is too high suggests business branches may have been incorrectly converted to `@inco:`. The ideal state is: all guards use `@inco:`, all business logic stays in `if`, and the ratio naturally settles at a reasonable value.
+The `inco/(if+inco)` ratio reflects the degree of separation between guards and business logic — **higher is not necessarily better**. A ratio that is too high suggests business branches may have been incorrectly converted to directives. The ideal state is: all guards use `@inco:` or `@if:`, all business logic stays in `if`, and the ratio naturally settles at a reasonable value.
 
 ## How It Works
 
-1. `inco gen` scans all `.go` files for `// @inco:` comments (respecting `.incoignore`; test files, hidden directories, `vendor/`, and `testdata/` are always skipped)
+1. `inco gen` scans all `.go` files for `// @inco:` / `// @if:` comments (respecting `.incoignore`; test files, hidden directories, `vendor/`, and `testdata/` are always skipped)
 2. Uses `go/ast` to classify each directive as **standalone** (comment-only line) or **inline** (attached to a statement)
 3. Generates shadow files in `.inco_cache/` — standalone directives become `if`-blocks in place; inline directives keep the code line and inject the `if`-block after it
 4. Injects `//line` directives so panic stack traces point back to **original** source lines
@@ -346,7 +351,7 @@ The `inco/(if+inco)` ratio reflects the degree of separation between guards and 
 
 ### AST-Based Classification
 
-The engine parses each source file as an AST and collects the set of line numbers that contain Go statements (`AssignStmt`, `ExprStmt`, `ReturnStmt`, `IncDecStmt`, `SendStmt`, `GoStmt`, `DeferStmt`, `BranchStmt`). When a `// @inco:` comment is found:
+The engine parses each source file as an AST and collects the set of line numbers that contain Go statements (`AssignStmt`, `ExprStmt`, `ReturnStmt`, `IncDecStmt`, `SendStmt`, `GoStmt`, `DeferStmt`, `BranchStmt`). When a directive comment is found:
 
 - **Comment-only line** → standalone directive (full line replaced by `if`-block)
 - **Line in statement set** → inline directive (code preserved, `if`-block injected after)
@@ -372,7 +377,7 @@ Shadow files use content-hash naming: `<basename>_<sha256[:16]>.go`. This ensure
 cmd/inco/           CLI: gen, build, test, run, audit, release, clean
 internal/inco/      Core engine:
   audit.inco.go       Contract coverage auditing
-  directive.inco.go   Directive parsing (@inco:)
+  directive.inco.go   Directive parsing (@inco:, @if:)
   engine.inco.go      AST processing, code generation, overlay I/O
   ignore.inco.go      .incoignore file parsing and hierarchical matching
   release.inco.go     Release mode: bake guards into source
@@ -389,10 +394,10 @@ Inco is self-hosting — it uses `@inco:` directives in its own source code. Sin
 `_ = var` is the **acknowledgement pattern** — you explicitly tell the compiler "I know this variable exists; its guard is handled by inco." When a variable is only used in a directive, `_ = var` makes the intent clear:
 
 ```go
-_ = err // @inco: err == nil, -panic(err)
+_ = err // @if: err != nil, -panic(err)
 ```
 
-`_ = err` acknowledges the variable in source; `// @inco:` generates the real guard in the overlay. The code compiles cleanly with or without inco.
+`_ = err` acknowledges the variable in source; the directive generates the real guard in the overlay. The code compiles cleanly with or without inco.
 
 ## Design
 
@@ -409,25 +414,25 @@ _ = err // @inco: err == nil, -panic(err)
 
 ### 1. Long Expression Optimization
 
-If the expression in `@inco:` is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
+If the expression is too long or complex, extract it into a boolean variable first — this improves readability and works well with `_ = var`:
 
 ```go
 // ❌ Verbose and hard to read
-// @inco: si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo, -panic(...)
+// @if: si.ParentStateInfo != nil && si.ParentStateInfo != parentStateInfo, -panic(...)
 
 // ✅ Clear
-isParentValid := si.ParentStateInfo == nil || si.ParentStateInfo == parentStateInfo
-_ = isParentValid // @inco: isParentValid, -panic(...)
+isInvalid := si.ParentStateInfo != nil && si.ParentStateInfo != parentStateInfo
+_ = isInvalid // @if: isInvalid, -panic(...)
 ```
 
 ### 2. Repeated Var Assignment for Multiple Guards
 
-When applying multiple inco directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line:
+When applying multiple directives to the same variable consecutively (e.g., log first, then panic), repeat `_ = var` before each directive line:
 
 ```go
 // ✅ Best practice: explicitly suppress unused checks for each line
-_ = err // @inco: err == nil, -log("error occurred:", err)
-_ = err // @inco: err == nil, -panic(err)
+_ = err // @if: err != nil, -log("error occurred:", err)
+_ = err // @if: err != nil, -panic(err)
 ```
 
 ## License

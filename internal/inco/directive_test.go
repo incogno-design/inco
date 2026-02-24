@@ -522,3 +522,78 @@ func TestParseDirective_TrailingWhitespace(t *testing.T) {
 		t.Errorf("Action = %v", d.Action)
 	}
 }
+
+func TestParseDirective_Inco_NotNegated(t *testing.T) {
+	d := ParseDirective("// @inco: x > 0")
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Negated {
+		t.Error("Negated should be false for @inco:")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// @if: directive — condition used as-is (no negation)
+// ---------------------------------------------------------------------------
+
+func TestParseDirective_If_ExprOnly(t *testing.T) {
+	d := ParseDirective("// @if: err != nil")
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Expr != "err != nil" {
+		t.Errorf("Expr = %q, want %q", d.Expr, "err != nil")
+	}
+	if d.Action != ActionPanic {
+		t.Errorf("Action = %v, want ActionPanic", d.Action)
+	}
+	if !d.Negated {
+		t.Error("Negated should be true for @if:")
+	}
+}
+
+func TestParseDirective_If_WithReturn(t *testing.T) {
+	d := ParseDirective("// @if: err != nil, -return(nil, err)")
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Expr != "err != nil" {
+		t.Errorf("Expr = %q", d.Expr)
+	}
+	if d.Action != ActionReturn {
+		t.Errorf("Action = %v", d.Action)
+	}
+	if !d.Negated {
+		t.Error("Negated should be true for @if:")
+	}
+}
+
+func TestParseDirective_If_WithPanic(t *testing.T) {
+	d := ParseDirective("// @if: x == nil, -panic(\"x is nil\")")
+	if d == nil {
+		t.Fatal("got nil")
+	}
+	if d.Expr != "x == nil" {
+		t.Errorf("Expr = %q", d.Expr)
+	}
+	if d.Action != ActionPanic {
+		t.Errorf("Action = %v", d.Action)
+	}
+	if !d.Negated {
+		t.Error("Negated should be true for @if:")
+	}
+}
+
+func TestParseDirective_If_Nil(t *testing.T) {
+	for _, input := range []string{
+		"// @if",     // missing colon
+		"// @if:",    // no expression
+		"// @if:   ", // whitespace only
+		"// @IF: x",  // wrong case
+	} {
+		if d := ParseDirective(input); d != nil {
+			t.Errorf("ParseDirective(%q) = %+v, want nil", input, d)
+		}
+	}
+}

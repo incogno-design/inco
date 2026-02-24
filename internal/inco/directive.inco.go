@@ -7,8 +7,9 @@ import (
 
 var (
 	// directiveRe matches the body after stripping comment delimiters.
-	// Group 1: everything after "@inco: "
-	directiveRe = regexp.MustCompile(`^@inco:\s+(.+)$`)
+	// Group 1: prefix (@inco or @if)
+	// Group 2: everything after the colon+space
+	directiveRe = regexp.MustCompile(`^(@inco|@if):\s+(.+)$`)
 
 	// actionRe splits "expr, -action(args)" into components.
 	// Greedy (.+) backtracks to find the last top-level ", -action..." —
@@ -35,18 +36,23 @@ var actionFromName = map[string]ActionKind{
 }
 
 // ParseDirective extracts a Directive from a comment string.
-// Returns nil when the comment is not a valid @inco: directive.
+// Returns nil when the comment is not a valid @inco:/@if: directive.
 //
 // Syntax: @inco: <expr>[, -action[(args...)]]
+//
+//	@if: <expr>[, -action[(args...)]]
 func ParseDirective(comment string) *Directive {
 	body := stripComment(comment)
 	// @inco: body != "", -return(nil)
 
 	m := directiveRe.FindStringSubmatch(body)
 	// @inco: m != nil, -return(nil)
-	rest := m[1]
+	prefix := m[1]
+	rest := m[2]
 
 	d := &Directive{Action: ActionPanic}
+	d.Negated = (prefix == "@if")
+
 	if am := actionRe.FindStringSubmatch(rest); am != nil {
 		d.Expr = strings.TrimSpace(am[1])
 		d.Action = actionFromName[am[2]]

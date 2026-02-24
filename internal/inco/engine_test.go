@@ -1943,3 +1943,104 @@ func Do(x int) {
 		t.Error("final shadow should contain guard")
 	}
 }
+
+// ===========================================================================
+// @if: directive — same direction as if (no negation)
+// ===========================================================================
+
+func TestEngine_IfDirective(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) {
+	// @if: x <= 0
+	_ = x
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if strings.Contains(shadow, "!(x <= 0)") {
+		t.Errorf("@if: should NOT negate condition, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, "if x <= 0") {
+		t.Errorf("@if: should use condition as-is, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_IfDirective_WithReturn(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do() error {
+	var err error
+	// @if: err != nil, -return(err)
+	return nil
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "if err != nil") {
+		t.Errorf("@if: should use condition as-is, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, "return err") {
+		t.Errorf("should contain return action, got:\n%s", shadow)
+	}
+}
+
+func TestEngine_IfDirective_Inline(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do() error {
+	var err error
+	_ = err // @if: err != nil, -return(err)
+	return nil
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "if err != nil") {
+		t.Errorf("@if: inline should use condition as-is, got:\n%s", shadow)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// @inco: and @if: can coexist in the same function
+// ---------------------------------------------------------------------------
+
+func TestEngine_MixedDirectives(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"main.go": `package main
+
+func Do(x int) error {
+	var err error
+	// @inco: x > 0
+	// @if: err != nil, -return(err)
+	return nil
+}
+`,
+	})
+	e := NewEngine(dir)
+	if err := e.Run(); err != nil {
+		t.Fatal(err)
+	}
+	shadow := readShadow(t, e)
+	if !strings.Contains(shadow, "!(x > 0)") {
+		t.Errorf("@inco: should be negated, got:\n%s", shadow)
+	}
+	if !strings.Contains(shadow, "if err != nil") {
+		t.Errorf("@if: should be as-is, got:\n%s", shadow)
+	}
+}

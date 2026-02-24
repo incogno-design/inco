@@ -296,7 +296,12 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 //	    panic(...)
 //	}
 func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int, logPkgName string) string {
-	cond := fmt.Sprintf("!(%s)", d.Expr)
+	var cond string
+	if d.Negated {
+		cond = d.Expr
+	} else {
+		cond = fmt.Sprintf("!(%s)", d.Expr)
+	}
 	body := e.buildPanicBody(d, path, line, logPkgName)
 	return fmt.Sprintf("%sif %s {\n%s\t%s\n%s}", indent, cond, indent, body, indent)
 }

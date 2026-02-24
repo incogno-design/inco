@@ -1,12 +1,13 @@
 // Package inco implements a compile-time code injection engine.
 //
-// Directive:
+// Directives:
 //
-//	// @inco: <expr>
-//	// @inco: <expr>, -panic("msg")
-//	// @inco: <expr>, -return(x, y)
-//	// @inco: <expr>, -continue
-//	// @inco: <expr>, -break
+//	// @inco: <expr>   — contract: expect expr to be true (generated: if !(expr))
+//	// @if: <expr>     — same as if (generated: if expr)
+//
+// Both support action suffixes:
+//
+//	, -panic("msg")  , -return(x, y)  , -continue  , -break  , -log(args...)
 //
 // The default action is -panic with an auto-generated message.
 package inco
@@ -47,11 +48,12 @@ func (k ActionKind) String() string {
 // Directive
 // ---------------------------------------------------------------------------
 
-// Directive is the parsed form of a single @inco: comment.
+// Directive is the parsed form of a single @inco:/@if: comment.
 type Directive struct {
 	Action     ActionKind // panic (default), return, continue, break, do, log
 	ActionArgs []string   // e.g. -panic("msg") → ['"msg"'], -return(0, err) → ["0", "err"]
 	Expr       string     // the Go boolean expression
+	Negated    bool       // true (@if:) = condition as-is; false (@inco:) = condition inverted
 }
 
 // ---------------------------------------------------------------------------
