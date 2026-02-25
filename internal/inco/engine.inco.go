@@ -68,10 +68,7 @@ func (e *Engine) Run() error {
 
 	// Process files concurrently.
 	results := make([]fileResult, len(paths))
-	workers := runtime.GOMAXPROCS(0)
-	if workers > len(paths) {
-		workers = len(paths)
-	}
+	workers := min(runtime.GOMAXPROCS(0), len(paths))
 
 	var wg sync.WaitGroup
 	var workerErr atomic.Value // stores first error from a worker
@@ -170,13 +167,12 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 
 	err = e.writeManifest(newManifest)
 	_ = err // @inco: err == nil, -return(err)
+	// @inco: len(e.Overlay.Replace) > 0, -return(nil)
 
-	if len(e.Overlay.Replace) > 0 {
-		processed := len(e.Overlay.Replace) - skipped
-		fmt.Fprintf(os.Stderr, "inco: overlay written to %s (%d file(s) mapped, %d processed, %d cached)\n",
-			filepath.Join(e.Root, ".inco_cache", "overlay.json"),
-			len(e.Overlay.Replace), processed, skipped)
-	}
+	processed := len(e.Overlay.Replace) - skipped
+	fmt.Fprintf(os.Stderr, "inco: overlay written to %s (%d file(s) mapped, %d processed, %d cached)\n",
+		filepath.Join(e.Root, ".inco_cache", "overlay.json"),
+		len(e.Overlay.Replace), processed, skipped)
 	return nil
 }
 

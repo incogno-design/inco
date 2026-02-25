@@ -78,11 +78,10 @@ func stripComment(s string) string {
 	s = strings.TrimSpace(s)
 	m := commentRe.FindStringSubmatch(s)
 
-	// m[1] is // content, m[2] is /* */ content; one will be empty.
+	// m[1] is // content, m[2] is /* */ content; exactly one is non-empty.
 	// @inco: m != nil, -return("")
-	// @inco: m[1] == "", -return(m[1])
 
-	return m[2]
+	return m[1] + m[2]
 }
 
 // splitTopLevel splits s by top-level commas, respecting nested parens,

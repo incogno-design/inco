@@ -68,20 +68,14 @@ func FormatDirectiveSpacing(src string) string {
 			for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
 				j++
 			}
-			if j >= len(lines) {
-				// Directive at end of file.
-				i = j
-			} else if directiveLines[j+1] {
-				// Next non-blank is a directive — remove all blanks.
-				i = j
-			} else if strings.HasPrefix(strings.TrimSpace(lines[j]), "}") {
-				// Next is closing brace — no blank line.
-				i = j
-			} else {
-				// Non-directive code — ensure exactly one blank line.
+			// Insert blank only before non-directive, non-brace code.
+			atEnd := j >= len(lines)
+			nextIsDirective := !atEnd && directiveLines[j+1]
+			nextIsBrace := !atEnd && strings.HasPrefix(strings.TrimSpace(lines[j]), "}")
+			if !atEnd && !nextIsDirective && !nextIsBrace {
 				out = append(out, "")
-				i = j
 			}
+			i = j
 		} else {
 			i++
 		}

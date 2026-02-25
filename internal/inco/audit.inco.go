@@ -43,7 +43,6 @@ type AuditResult struct {
 	TotalFuncs      int
 	GuardedFuncs    int // functions with >= 1 @inco: directive
 	TotalIfs        int
-	TotalRequires   int
 	TotalDirectives int
 	TotalInco       int // @inco: count
 	TotalIfDir      int // @if: count
@@ -80,7 +79,7 @@ func Audit(root string) (*AuditResult, error) {
 	r := &AuditResult{Files: files, IgnoredPaths: ignored, TotalFiles: len(files)}
 	for _, f := range files {
 		r.TotalIfs += f.IfCount
-		r.TotalRequires += f.RequireCount
+		r.TotalDirectives += f.RequireCount
 		r.TotalInco += f.IncoCount
 		r.TotalIfDir += f.IfDirCount
 		r.TotalSpaced += f.SpacedCount
@@ -91,7 +90,6 @@ func Audit(root string) (*AuditResult, error) {
 			}
 		}
 	}
-	r.TotalDirectives = r.TotalRequires
 	return r, nil
 }
 

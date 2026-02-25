@@ -62,8 +62,8 @@ func (db *DB) Query(q string) (string, error) { return "", nil }
 	if result.GuardedFuncs != 1 { // only Guarded
 		t.Errorf("GuardedFuncs = %d, want 1", result.GuardedFuncs)
 	}
-	if result.TotalRequires != 2 {
-		t.Errorf("TotalRequires = %d, want 2", result.TotalRequires)
+	if result.TotalDirectives != 2 {
+		t.Errorf("TotalDirectives = %d, want 2", result.TotalDirectives)
 	}
 	if result.TotalDirectives != 2 {
 		t.Errorf("TotalDirectives = %d, want 2", result.TotalDirectives)
@@ -119,8 +119,8 @@ func C(z int) {
 	if result.GuardedFuncs != 2 { // A and C
 		t.Errorf("GuardedFuncs = %d, want 2", result.GuardedFuncs)
 	}
-	if result.TotalRequires != 2 {
-		t.Errorf("TotalRequires = %d, want 2", result.TotalRequires)
+	if result.TotalDirectives != 2 {
+		t.Errorf("TotalDirectives = %d, want 2", result.TotalDirectives)
 	}
 	if result.TotalIfs != 2 {
 		t.Errorf("TotalIfs = %d, want 2", result.TotalIfs)
@@ -165,8 +165,8 @@ func Y(b int) {
 	if result.TotalFiles != 1 {
 		t.Errorf("TotalFiles = %d, want 1", result.TotalFiles)
 	}
-	if result.TotalRequires != 1 {
-		t.Errorf("TotalRequires = %d, want 1", result.TotalRequires)
+	if result.TotalDirectives != 1 {
+		t.Errorf("TotalDirectives = %d, want 1", result.TotalDirectives)
 	}
 }
 
@@ -274,7 +274,6 @@ func TestAudit_PrintReport(t *testing.T) {
 		TotalFuncs:      5,
 		GuardedFuncs:    3,
 		TotalIfs:        10,
-		TotalRequires:   4,
 		TotalDirectives: 4,
 		TotalInco:       3,
 		TotalIfDir:      1,
@@ -352,8 +351,8 @@ func Filter(items []int) {
 	}
 
 	// 3 @inco: (x > 0, name != "", v < 1000) + 2 @if: (err != nil, v < 0) = 5 total
-	if result.TotalRequires != 5 {
-		t.Errorf("TotalRequires = %d, want 5", result.TotalRequires)
+	if result.TotalDirectives != 5 {
+		t.Errorf("TotalDirectives = %d, want 5", result.TotalDirectives)
 	}
 	if result.TotalInco != 3 {
 		t.Errorf("TotalInco = %d, want 3", result.TotalInco)
@@ -428,8 +427,8 @@ func Check(x int) {
 		t.Fatal(err)
 	}
 
-	if result.TotalRequires != 1 {
-		t.Errorf("TotalRequires = %d, want 1", result.TotalRequires)
+	if result.TotalDirectives != 1 {
+		t.Errorf("TotalDirectives = %d, want 1", result.TotalDirectives)
 	}
 	if result.TotalDirectives != 1 {
 		t.Errorf("TotalDirectives = %d, want 1", result.TotalDirectives)
