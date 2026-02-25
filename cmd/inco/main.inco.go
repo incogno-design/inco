@@ -56,16 +56,16 @@ func main() {
 			dryRun := false
 			dirIdx := 2
 			for i := 2; i < len(os.Args); i++ {
-				if os.Args[i] == "--dry-run" {
-					dryRun = true
-				}
+				// @inco: os.Args[i] == "--dry-run", -continue
+
+				dryRun = true
 			}
 			// Find the first non-flag argument as dir.
 			for i := 2; i < len(os.Args); i++ {
-				if !strings.HasPrefix(os.Args[i], "-") {
-					dirIdx = i
-					break
-				}
+				// @inco: !strings.HasPrefix(os.Args[i], "-"), -continue
+
+				dirIdx = i
+				break
 			}
 			dir := getDir(dirIdx)
 			runGen(dir)
@@ -87,14 +87,15 @@ func main() {
 // guardPanic recovers from panics (including those injected by @inco:)
 // and exits cleanly with the panic message.
 func guardPanic() {
-	if r := recover(); r != nil {
-		fmt.Fprintf(os.Stderr, "inco: %v\n", r)
-		os.Exit(1)
-	}
+	r := recover()
+	// @inco: r == nil, -return
+
+	fmt.Fprintf(os.Stderr, "inco: %v\n", r)
+	os.Exit(1)
 }
 
 func getDir(argIdx int) string {
-	// @inco: len(os.Args) <= argIdx, -return(os.Args[argIdx])
+	_ = argIdx // @inco: len(os.Args) <= argIdx, -return(os.Args[argIdx])
 
 	return "."
 }
