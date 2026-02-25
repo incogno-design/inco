@@ -105,6 +105,7 @@ _ = err // @inco: err == nil, -panic(err)
 7. **After editing code, always run `go vet ./...`** to check for unused variables
 8. **Do not overthink** — make a decision, apply it, move on
 9. **Review `if` as guard clause first** — `if` with single-action body (return, panic, continue, break) and NO `else`? Convert to directive. Business logic? Keep `if`
+10. **Minimize `spaced/inco` ratio in audit** — a low ratio means guard semantics and logic flow are cleanly separated. When a directive is immediately followed by its guarded code (no blank line), it signals tight coupling. Use `inco fmt` to normalize, then review: can you restructure to reduce unnecessary spacing?
 
 ### if → Directive Conversion
 
