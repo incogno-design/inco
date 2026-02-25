@@ -315,7 +315,7 @@ func foo(x int, y int) {
 }
 `)
 
-	err := Format(dir)
+	_, err := Format(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func foo(x int) {
 	path := filepath.Join(dir, "main.go")
 	writeFile(t, path, content)
 
-	err := Format(dir)
+	_, err := Format(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,21 +13,25 @@ import (
 // spacing around @inco:/@if: directives.
 //
 // Typically called between two go fmt passes: go fmt → Format → go fmt.
-func Format(root string) error {
-	// @inco: root != "", -return(fmt.Errorf("Format: root must not be empty"))
+// Returns (changed, error) — changed is true when any file was modified.
+func Format(root string) (bool, error) {
+	// @inco: root != "", -return(false, fmt.Errorf("Format: root must not be empty"))
 
 	absRoot, err := filepath.Abs(root)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Format: %w", err))
+	_ = err // @inco: err == nil, -return(false, fmt.Errorf("Format: %w", err))
 
-	return walkGoFiles(absRoot, func(path string) error {
+	changed := false
+	err = walkGoFiles(absRoot, func(path string) error {
 		src, err := os.ReadFile(path)
 		_ = err // @inco: err == nil, -return(fmt.Errorf("Format: read %s: %w", path, err))
 
 		result := FormatDirectiveSpacing(string(src))
 		// @inco: result != string(src), -return(nil)
 
+		changed = true
 		return os.WriteFile(path, []byte(result), 0o644)
 	})
+	return changed, err
 }
 
 // FormatDirectiveSpacing adjusts blank lines around directive comments in

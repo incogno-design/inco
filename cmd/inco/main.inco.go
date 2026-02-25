@@ -162,10 +162,11 @@ func runFmt(args []string) {
 	absDir, err := filepath.Abs(".")
 	_ = err // @inco: err == nil, -panic(err)
 
-	err = inco.Format(absDir)
-	_ = err // @inco: err == nil, -panic(err)
+	changed, err := inco.Format(absDir)
+	_ = err     // @inco: err == nil, -panic(err)
+	_ = changed // @inco: changed, -return
 
-	// 3. Second gofmt pass.
+	// 3. Second gofmt pass — only needed when spacing was adjusted.
 	cmd = execCommand("gofmt", gofmtArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
