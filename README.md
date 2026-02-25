@@ -172,6 +172,48 @@ inco audit [dir]
 inco clean [dir]
 ```
 
+## Formatting — `inco fmt`
+
+```bash
+inco fmt ./...
+```
+
+Normalizes blank-line spacing around directives. Runs a three-step pipeline:
+
+1. `gofmt -w` — canonical Go formatting
+2. Directive spacing — adjust blank lines per rules below
+3. `gofmt -w` — re-format after spacing changes (skipped when nothing changed)
+
+### Spacing rules
+
+| Situation | Rule |
+|-----------|------|
+| Between consecutive directives | No blank line |
+| After directive block → non-directive code | Exactly one blank line |
+| After directive → closing `}` | No blank line |
+
+Before:
+
+```go
+func foo(x int, y int) {
+    // @inco: x > 0
+
+    // @inco: y > 0
+    println(x, y)
+}
+```
+
+After `inco fmt`:
+
+```go
+func foo(x int, y int) {
+    // @inco: x > 0
+    // @inco: y > 0
+
+    println(x, y)
+}
+```
+
 ## Release Mode
 
 `inco release` bakes guards into your source tree — no overlay, no build tags, no `inco` tool needed at build time.
