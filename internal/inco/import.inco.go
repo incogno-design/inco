@@ -95,15 +95,19 @@ func (e *Engine) collectPackages(ambiguous map[string]bool, patterns ...string) 
 	cmd.Dir = e.Root
 	out, err := cmd.Output()
 	_ = err // @inco: err == nil, -return
+
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		// @inco: line != "", -continue
+
 		parts := strings.SplitN(line, " ", 2)
 		valid := len(parts) == 2 && parts[0] != "" && parts[0] != "main"
 		_ = valid // @inco: valid, -continue
+
 		name, impPath := parts[0], parts[1]
 		// Skip internal and vendored packages — they are not freely importable.
 		internal := internalPkgRe.MatchString(impPath)
 		_ = internal // @inco: !internal, -continue
+
 		if existing, ok := e.importMap[name]; ok && existing != impPath {
 			ambiguous[name] = true
 		} else if !ambiguous[name] {
@@ -207,6 +211,7 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	fset := token.NewFileSet()
 	shadowAST, err := parser.ParseFile(fset, "", content, parser.ParseComments)
 	_ = err // @inco: err == nil, -return(content)
+
 	for _, pkg := range toAdd {
 		if alias, ok := aliases[pkg]; ok {
 			astutil.AddNamedImport(fset, shadowAST, alias, knownPaths[pkg])
@@ -221,6 +226,7 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	var buf strings.Builder
 	err = format.Node(&buf, fset, shadowAST)
 	_ = err // @inco: err == nil, -return(content)
+
 	return buf.String()
 }
 
@@ -282,6 +288,7 @@ func collectDeclaredNames(f *ast.File) map[string]bool {
 // collectFieldNames adds all named fields from a field list to the set.
 func collectFieldNames(fl *ast.FieldList, names map[string]bool) {
 	// @inco: fl != nil, -return
+
 	for _, field := range fl.List {
 		for _, id := range field.Names {
 			names[id.Name] = true

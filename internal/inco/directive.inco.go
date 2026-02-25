@@ -47,6 +47,7 @@ func ParseDirective(comment string) *Directive {
 
 	m := directiveRe.FindStringSubmatch(body)
 	// @inco: m != nil, -return(nil)
+
 	prefix := m[1]
 	rest := m[2]
 
@@ -64,6 +65,7 @@ func ParseDirective(comment string) *Directive {
 	}
 
 	// @inco: d.Expr != "", -return(nil)
+
 	return d
 }
 
@@ -75,9 +77,11 @@ func ParseDirective(comment string) *Directive {
 func stripComment(s string) string {
 	s = strings.TrimSpace(s)
 	m := commentRe.FindStringSubmatch(s)
-	// @inco: m != nil, -return("")
+
 	// m[1] is // content, m[2] is /* */ content; one will be empty.
+	// @inco: m != nil, -return("")
 	// @inco: m[1] == "", -return(m[1])
+
 	return m[2]
 }
 
@@ -182,9 +186,11 @@ func collectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
 	_ = declGroups
 	for _, cg := range f.Comments {
 		// @inco: !declGroups[cg], -continue
+
 		for _, c := range cg.List {
 			d := ParseDirective(c.Text)
 			_ = d // @inco: d != nil, -continue
+
 			fn(c, d)
 		}
 	}

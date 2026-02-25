@@ -18,20 +18,25 @@ func walkGoFiles(root string, fn func(path string) error) error {
 
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		// @inco: err == nil, -panic(err)
+
 		if d.IsDir() {
 			name := d.Name()
 			skip := skipDirRe.MatchString(name)
 			_ = skip // @inco: !skip, -return(filepath.SkipDir)
+
 			// Sync the ignore tree to the current position.
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
 			// @inco: !ig.Match(path, true), -return(filepath.SkipDir)
+
 			return nil
 		}
 		isGoSource := goSourceRe.MatchString(d.Name()) && !testFileRe.MatchString(d.Name())
 		_ = isGoSource // @inco: isGoSource, -return(nil)
+
 		ignored := ig.Match(path, false)
 		_ = ignored // @inco: !ignored, -return(nil)
+
 		return fn(path)
 	})
 }

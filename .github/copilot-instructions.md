@@ -163,19 +163,57 @@ _ = err // @inco: err == nil, -log("error:", err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 3. Group Declarations, Then Directives
+### 3. Group Directives Together
 
-Use unique names (`errA`, `errB`) to avoid shadowing:
+Directives should be clustered, not scattered among logic. When all validations are independent, group declarations first, then directives:
 
 ```go
+// ✅ Independent — group declarations, then directives
 a, errA := doA()
 b, errB := doB()
 
 _ = errA // @inco: errA == nil, -panic(errA)
 _ = errB // @inco: errB == nil, -panic(errB)
+
+use(a, b)
 ```
 
-**Exception**: If `b` depends on `a` being valid, don't group — correctness first.
+Use unique names (`errA`, `errB`) to avoid shadowing.
+
+When validations are **sequential** (each step depends on the previous), interleave declaration → directive pairs with a blank line between each pair:
+
+```go
+// ✅ Sequential — declare, validate, blank, declare, validate, blank, logic
+absDir, err := filepath.Abs(dir)
+_ = err // @inco: err == nil, -panic(err)
+
+err = inco.NewEngine(absDir).Run()
+_ = err // @inco: err == nil, -panic(err)
+
+fmt.Println("done")
+```
+
+**Do not** scatter directives far from their declarations or mix them into unrelated logic.
+
+### 3b. Unused Variables: Suppress Before the Directive
+
+When a variable is only referenced inside a directive's action (not in later code), place the `_ = var` **above** the directive, not below:
+
+```go
+// ✅ CORRECT — suppressor before directive
+s, ok := actionNames[k]
+_ = s
+_ = ok // @inco: !ok, -return(s)
+return "unknown"
+
+// ❌ WRONG — suppressor after directive breaks formatting
+s, ok := actionNames[k]
+_ = ok // @inco: !ok, -return(s)
+_ = s
+return "unknown"
+```
+
+This keeps the directive at the boundary between guard and code, and `inco fmt` spacing rules work naturally.
 
 ### 4. Never Write Both `if` and Directive
 

@@ -156,6 +156,9 @@ inco build ./...
 inco test ./...
 inco run .
 
+# Format source files (normalizes directive spacing)
+inco fmt ./...
+
 # Release: bake guards into source tree (no overlay needed)
 inco release [dir]
 
@@ -375,12 +378,14 @@ Shadow files use content-hash naming: `<basename>_<sha256[:16]>.go`. This ensure
 ## Project Structure
 
 ```
-cmd/inco/           CLI: gen, build, test, run, audit, release, clean
+cmd/inco/           CLI: gen, build, test, run, fmt, audit, release, clean
 internal/inco/      Core engine:
   audit.inco.go       Contract coverage auditing
   directive.inco.go   Directive parsing (@inco:, @if:)
   engine.inco.go      AST processing, code generation, overlay I/O
+  format.inco.go      Directive spacing formatter (inco fmt)
   ignore.inco.go      .incoignore file parsing and hierarchical matching
+  import.inco.go      Auto-import management (stdlib whitelist, go list)
   release.inco.go     Release mode: bake guards into source
   types.inco.go       Core types (Directive, ActionKind, Overlay)
   walk.inco.go        Shared file traversal logic
@@ -436,7 +441,59 @@ _ = err // @inco: err == nil, -log("error occurred:", err)
 _ = err // @inco: err == nil, -panic(err)
 ```
 
-### 3. `@inco:` is for Function Parameter Validation
+### 3. Group Directives Together
+
+Directives should be clustered, not scattered among logic. When all validations are independent, group declarations first, then directives:
+
+```go
+// ✅ Independent — group declarations, then directives
+a, errA := doA()
+b, errB := doB()
+
+_ = errA // @inco: errA == nil, -panic(errA)
+_ = errB // @inco: errB == nil, -panic(errB)
+
+use(a, b)
+```
+
+Use unique names (`errA`, `errB`) to avoid shadowing.
+
+When validations are **sequential** (each step depends on the previous), interleave declaration → directive pairs with a blank line between each pair:
+
+```go
+// ✅ Sequential — declare, validate, blank, declare, validate, blank, logic
+absDir, err := filepath.Abs(dir)
+_ = err // @inco: err == nil, -panic(err)
+
+err = inco.NewEngine(absDir).Run()
+_ = err // @inco: err == nil, -panic(err)
+
+fmt.Println("done")
+```
+
+**Do not** scatter directives far from their declarations or mix them into unrelated logic.
+
+### 3b. Unused Variables: Suppress Before the Directive
+
+When a variable is only referenced inside a directive's action (not in later code), place the `_ = var` **above** the directive, not below:
+
+```go
+// ✅ CORRECT — suppressor before directive
+s, ok := actionNames[k]
+_ = s
+_ = ok // @inco: !ok, -return(s)
+return "unknown"
+
+// ❌ WRONG — suppressor after directive breaks formatting
+s, ok := actionNames[k]
+_ = ok // @inco: !ok, -return(s)
+_ = s
+return "unknown"
+```
+
+This keeps the directive at the boundary between guard and code, and `inco fmt` spacing rules work naturally.
+
+### 4. `@inco:` is for Function Parameter Validation
 
 The core purpose of `@inco:` is **parameter validation and precondition checks** at function entry. The function signature declares types; `@inco:` declares value constraints:
 

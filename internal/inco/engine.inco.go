@@ -31,6 +31,7 @@ type Engine struct {
 // NewEngine creates an engine rooted at the given directory.
 func NewEngine(root string) *Engine {
 	// @inco: root != "", -panic("NewEngine: root must not be empty")
+
 	return &Engine{
 		Root:    root,
 		Overlay: Overlay{Replace: make(map[string]string)},
@@ -150,6 +151,7 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 		} else {
 			err := e.writeShadow(r.Path, r.ShadowData)
 			_ = err // @inco: err == nil, -return(err)
+
 			if sp, ok := e.Overlay.Replace[r.Path]; ok {
 				newManifest.Files[r.Path] = ManifestEntry{SrcHash: r.SrcHash, ShadowPath: sp}
 			}
@@ -165,6 +167,7 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 
 	err := e.writeOverlay()
 	_ = err // @inco: err == nil, -return(err)
+
 	err = e.writeManifest(newManifest)
 	_ = err // @inco: err == nil, -return(err)
 
@@ -187,6 +190,7 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) []byte {
 	// @inco: path != "", -panic("generateShadow: empty path")
 	// @inco: f != nil, -panic("generateShadow: nil AST")
+
 	// 1. Collect directive lines from AST comments.
 	directives := make(map[int]*Directive) // 1-based line → Directive
 	collectDirectives(f, func(c *ast.Comment, d *Directive) {
@@ -197,6 +201,7 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 	// 2. Read source as lines.
 	src, err := os.ReadFile(path)
 	_ = err // @inco: err == nil, -panic(err)
+
 	lines := strings.Split(string(src), "\n")
 
 	// 3. Classify directives as standalone or inline using AST.
@@ -207,6 +212,7 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 	for lineNum, d := range directives {
 		idx := lineNum - 1
 		// @inco: idx >= 0 && idx < len(lines), -continue
+
 		trimmed := strings.TrimSpace(lines[idx])
 		isCommentLine := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*")
 		if isCommentLine {
@@ -309,6 +315,7 @@ func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName 
 	switch d.Action {
 	case ActionReturn:
 		// @inco: len(d.ActionArgs) == 0, -return("return " + strings.Join(d.ActionArgs, ", "))
+
 		return "return"
 	case ActionContinue:
 		return "continue"
@@ -320,6 +327,7 @@ func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName 
 		return logPkgName + ".Println(" + strings.Join(d.ActionArgs, ", ") + ")"
 	default: // ActionPanic
 		// @inco: len(d.ActionArgs) == 0, -return("panic(" + d.ActionArgs[0] + ")")
+
 		relPath := path
 		if rel, err := filepath.Rel(e.Root, path); err == nil {
 			relPath = rel
@@ -346,6 +354,7 @@ func (e *Engine) writeShadow(origPath string, content []byte) error {
 
 	err = os.WriteFile(shadowPath, content, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeShadow: write: %w", err))
+
 	e.Overlay.Replace[origPath] = shadowPath
 	return nil
 }
@@ -354,10 +363,13 @@ func (e *Engine) writeOverlay() error {
 	cacheDir := filepath.Join(e.Root, ".inco_cache")
 	err := os.MkdirAll(cacheDir, 0o755)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeOverlay: mkdir: %w", err))
+
 	data, err := json.MarshalIndent(e.Overlay, "", "  ")
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeOverlay: marshal: %w", err))
+
 	err = os.WriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeOverlay: write: %w", err))
+
 	return nil
 }
 
@@ -367,9 +379,11 @@ func (e *Engine) loadOverlayIfExists() map[string]string {
 	overlayPath := filepath.Join(e.Root, ".inco_cache", "overlay.json")
 	data, err := os.ReadFile(overlayPath)
 	_ = err // @inco: err == nil, -return(nil)
+
 	var ov Overlay
 	err = json.Unmarshal(data, &ov)
 	_ = err // @inco: err == nil, -return(nil)
+
 	return ov.Replace
 }
 
@@ -384,10 +398,12 @@ func (e *Engine) manifestPath() string {
 func (e *Engine) loadManifest() *Manifest {
 	data, err := os.ReadFile(e.manifestPath())
 	_ = err // @inco: err == nil, -return(&Manifest{Files: make(map[string]ManifestEntry)})
+
 	var m Manifest
 	err = json.Unmarshal(data, &m)
 	_ = err // @inco: err == nil, -return(&Manifest{Files: make(map[string]ManifestEntry)})
 	// @inco: m.Files != nil, -return(&Manifest{Files: make(map[string]ManifestEntry)})
+
 	return &m
 }
 
@@ -395,10 +411,13 @@ func (e *Engine) writeManifest(m *Manifest) error {
 	cacheDir := filepath.Join(e.Root, ".inco_cache")
 	err := os.MkdirAll(cacheDir, 0o755)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeManifest: mkdir: %w", err))
+
 	data, err := json.MarshalIndent(m, "", "  ")
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeManifest: marshal: %w", err))
+
 	err = os.WriteFile(e.manifestPath(), data, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeManifest: write: %w", err))
+
 	return nil
 }
 
@@ -406,6 +425,7 @@ func (e *Engine) writeManifest(m *Manifest) error {
 func hashFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	_ = err // @inco: err == nil, -return("", fmt.Errorf("hashFile %s: %w", path, err))
+
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h), nil
 }
@@ -426,6 +446,7 @@ func collectStmtLines(f *ast.File, fset *token.FileSet) map[int]bool {
 	lines := make(map[int]bool)
 	ast.Inspect(f, func(n ast.Node) bool {
 		// @inco: n != nil, -return(false)
+
 		switch n.(type) {
 		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt,
 			*ast.IncDecStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt,

@@ -32,6 +32,7 @@ type FileAudit struct {
 	RequireCount int         // total directives (@inco: + @if:)
 	IncoCount    int         // @inco: directives only
 	IfDirCount   int         // @if: directives only
+	SpacedCount  int         // directives followed by a blank line
 }
 
 // AuditResult is the aggregate report.
@@ -46,6 +47,7 @@ type AuditResult struct {
 	TotalDirectives int
 	TotalInco       int // @inco: count
 	TotalIfDir      int // @if: count
+	TotalSpaced     int // directives followed by a blank line
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +58,7 @@ type AuditResult struct {
 // summarising @inco: coverage and directive-vs-if ratios.
 func Audit(root string) (*AuditResult, error) {
 	// @inco: root != "", -return(nil, fmt.Errorf("Audit: root must not be empty"))
+
 	absRoot, err := filepath.Abs(root)
 	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("Audit: %w", err))
 
@@ -80,6 +83,7 @@ func Audit(root string) (*AuditResult, error) {
 		r.TotalRequires += f.RequireCount
 		r.TotalInco += f.IncoCount
 		r.TotalIfDir += f.IfDirCount
+		r.TotalSpaced += f.SpacedCount
 		for _, fn := range f.Funcs {
 			r.TotalFuncs++
 			if fn.RequireCount > 0 {
@@ -102,18 +106,20 @@ func collectIgnored(root string, out *[]string) {
 	ig := NewIgnoreTree(root)
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		// @inco: err == nil, -return(nil)
+
 		if d.IsDir() {
 			// @inco: !skipDirRe.MatchString(d.Name()), -return(filepath.SkipDir)
+
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
-			if ig.Match(path, true) {
-				rel, _ := filepath.Rel(root, path)
-				*out = append(*out, rel+"/")
-				return filepath.SkipDir
-			}
-			return nil
+			// @inco: ig.Match(path, true), -return(nil)
+
+			rel, _ := filepath.Rel(root, path)
+			*out = append(*out, rel+"/")
+			return filepath.SkipDir
 		}
 		// @inco: goSourceRe.MatchString(d.Name()) && !testFileRe.MatchString(d.Name()), -return(nil)
+
 		if ig.Match(path, false) {
 			rel, _ := filepath.Rel(root, path)
 			*out = append(*out, rel)
@@ -150,6 +156,22 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 		directives = append(directives, directiveInfo{pos: c.Pos()})
 	})
 
+	// 1b. Count directives followed by a blank line.
+	src, readErr := os.ReadFile(path)
+	if readErr == nil {
+		srcLines := strings.Split(string(src), "\n")
+		directiveLines := make(map[int]bool)
+		for _, di := range directives {
+			directiveLines[fset.Position(di.pos).Line] = true
+		}
+		for lineNum := range directiveLines {
+			idx := lineNum // 0-based index of next line
+			if idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == "" {
+				fa.SpacedCount++
+			}
+		}
+	}
+
 	// 2. Count if statements.
 	ast.Inspect(f, func(n ast.Node) bool {
 		if _, ok := n.(*ast.IfStmt); ok {
@@ -171,6 +193,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 		switch fn := n.(type) {
 		case *ast.FuncDecl:
 			// @inco: fn.Body != nil, -return(true)
+
 			name := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) > 0 {
 				name = recvTypeName(fn.Recv.List[0].Type) + "." + name
@@ -183,6 +206,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 			})
 		case *ast.FuncLit:
 			// @inco: fn.Body != nil, -return(true)
+
 			funcRanges = append(funcRanges, funcRange{
 				name:  "func literal",
 				line:  fset.Position(fn.Pos()).Line,
@@ -273,6 +297,15 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 	} else {
 		fmt.Fprintf(w, "  inco/(if+inco):     — (no directives or if statements)\n\n")
 	}
+
+	// --- Spacing ---
+	fmt.Fprintf(w, "Directive spacing:\n")
+	fmt.Fprintf(w, "  Spaced (blank after):  %d / %d", r.TotalSpaced, r.TotalDirectives)
+	if r.TotalDirectives > 0 {
+		pct := float64(r.TotalSpaced) / float64(r.TotalDirectives) * 100
+		fmt.Fprintf(w, "  (%.1f%%)", pct)
+	}
+	fmt.Fprintf(w, "\n  Run 'inco fmt' to normalize spacing.\n\n")
 
 	// --- Per-file breakdown ---
 	fmt.Fprintf(w, "Per-file breakdown:\n")

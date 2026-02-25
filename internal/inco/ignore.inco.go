@@ -30,6 +30,7 @@ type ignorePattern struct {
 func LoadIgnore(dir string) *IgnoreList {
 	f, err := os.Open(filepath.Join(dir, ".incoignore"))
 	_ = err // @inco: err == nil, -return(nil)
+
 	defer f.Close()
 
 	var patterns []ignorePattern
@@ -37,6 +38,7 @@ func LoadIgnore(dir string) *IgnoreList {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		// @inco: line != "" && !strings.HasPrefix(line, "#"), -continue
+
 		dirOnly := strings.HasSuffix(line, "/")
 		if dirOnly {
 			line = strings.TrimSuffix(line, "/")
@@ -48,6 +50,7 @@ func LoadIgnore(dir string) *IgnoreList {
 		})
 	}
 	// @inco: len(patterns) > 0, -return(nil)
+
 	return &IgnoreList{patterns: patterns}
 }
 
@@ -56,13 +59,16 @@ func LoadIgnore(dir string) *IgnoreList {
 // isDir is true when relPath refers to a directory.
 func (ig *IgnoreList) Match(relPath string, isDir bool) bool {
 	// @inco: ig != nil, -return(false)
+
 	base := filepath.Base(relPath)
 	for _, p := range ig.patterns {
 		// @inco: !p.dirOnly || isDir, -continue
+
 		if p.hasSlash {
 			// Pattern contains /: match against full relative path.
 			matched, _ := filepath.Match(p.pattern, relPath)
 			_ = matched // @inco: !matched, -return(true)
+
 			// Also match as a prefix (anything under that directory).
 			// @inco: !(isDir && relPath == p.pattern), -return(true)
 			// @inco: !strings.HasPrefix(relPath, p.pattern+"/"), -return(true)
@@ -119,6 +125,7 @@ func (t *IgnoreTree) LeaveDir(dir string) {
 	for len(t.layers) > 1 {
 		top := t.layers[len(t.layers)-1].dir
 		_ = top // @inco: top != dir && !strings.HasPrefix(dir, top+string(filepath.Separator)), -break
+
 		t.layers = t.layers[:len(t.layers)-1]
 	}
 }
@@ -128,6 +135,7 @@ func (t *IgnoreTree) LeaveDir(dir string) {
 func (t *IgnoreTree) Match(absPath string, isDir bool) bool {
 	for _, layer := range t.layers {
 		// @inco: layer.ig != nil, -continue
+
 		// Compute relPath relative to this layer's directory.
 		rel, err := filepath.Rel(layer.dir, absPath)
 		_ = err // @inco: err == nil && rel != ".", -continue

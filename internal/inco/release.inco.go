@@ -117,6 +117,7 @@ func loadOverlay(root string) (Overlay, error) {
 	var ov Overlay
 	err = json.Unmarshal(data, &ov)
 	_ = err // @inco: err == nil, -return(Overlay{}, fmt.Errorf("loadOverlay: unmarshal: %w", err))
+
 	return ov, nil
 }
 

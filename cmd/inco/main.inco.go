@@ -9,13 +9,14 @@ import (
 	inco "github.com/imnive-design/inco-go/internal/inco"
 )
 
-const usage = `inco — invisible constraints, invincible code.
+const usage = `inco — incognito assertions for Go.
 
 Usage:
   inco gen [dir]           Scan source files and generate overlay
   inco build [args]        Run gen + go build -overlay
   inco test [args]         Run gen + go test -overlay
   inco run [args]          Run gen + go run -overlay
+  inco fmt [args]          Format source and normalize directive spacing
   inco audit [dir]         Contract coverage report
   inco release [--dry-run] [dir]       Copy guards into source tree
   inco release clean [dir] Remove released files and restore originals
@@ -44,6 +45,8 @@ func main() {
 	case "run":
 		runGen(".")
 		runGo("run", ".", os.Args[2:])
+	case "fmt":
+		runFmt(os.Args[2:])
 	case "audit":
 		runAudit(getDir(2)).PrintReport(os.Stdout)
 	case "release":
@@ -72,6 +75,7 @@ func main() {
 		dir := getDir(2)
 		err := os.RemoveAll(filepath.Join(dir, ".inco_cache"))
 		_ = err // @inco: err == nil, -panic(err)
+
 		fmt.Println("inco: cache cleaned")
 	default:
 		fmt.Fprintf(os.Stderr, "inco: unknown command %q\n", os.Args[1])
@@ -91,12 +95,14 @@ func guardPanic() {
 
 func getDir(argIdx int) string {
 	// @inco: len(os.Args) <= argIdx, -return(os.Args[argIdx])
+
 	return "."
 }
 
 func runGen(dir string) {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
+
 	err = inco.NewEngine(absDir).Run()
 	_ = err // @inco: err == nil, -panic(err)
 }
@@ -104,14 +110,17 @@ func runGen(dir string) {
 func runAudit(dir string) *inco.AuditResult {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
+
 	result, err := inco.Audit(absDir)
 	_ = err // @inco: err == nil, -panic(err)
+
 	return result
 }
 
 func runRelease(dir string, dryRun bool) {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
+
 	err = inco.Release(absDir, dryRun)
 	_ = err // @inco: err == nil, -panic(err)
 }
@@ -119,8 +128,36 @@ func runRelease(dir string, dryRun bool) {
 func runReleaseClean(dir string) {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
+
 	err = inco.ReleaseClean(absDir)
 	_ = err // @inco: err == nil, -panic(err)
+}
+
+func runFmt(args []string) {
+	fmtArgs := append([]string{"fmt"}, args...)
+
+	// 1. First go fmt pass.
+	cmd := execCommand("go", fmtArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		os.Exit(1)
+	}
+
+	// 2. Format directive spacing.
+	absDir, err := filepath.Abs(".")
+	_ = err // @inco: err == nil, -panic(err)
+
+	err = inco.Format(absDir)
+	_ = err // @inco: err == nil, -panic(err)
+
+	// 3. Second go fmt pass.
+	cmd = execCommand("go", fmtArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		os.Exit(1)
+	}
 }
 
 func runGo(subcmd, dir string, extraArgs []string) {
@@ -131,6 +168,7 @@ func runGo(subcmd, dir string, extraArgs []string) {
 	}
 	absOverlay, err := filepath.Abs(overlayPath)
 	_ = err // @inco: err == nil, -panic(err)
+
 	args := append([]string{fmt.Sprintf("-overlay=%s", absOverlay)}, extraArgs...)
 	execGo(subcmd, args)
 }
