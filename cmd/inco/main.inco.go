@@ -134,10 +134,24 @@ func runReleaseClean(dir string) {
 }
 
 func runFmt(args []string) {
-	fmtArgs := append([]string{"fmt"}, args...)
+	// gofmt operates on files/dirs directly — no go.mod needed.
+	// Convert Go package patterns (./...) to directory paths for gofmt.
+	var fmtTargets []string
+	for _, a := range args {
+		a = strings.TrimSuffix(a, "/...")
+		a = strings.TrimSuffix(a, "...")
+		if a == "" {
+			a = "."
+		}
+		fmtTargets = append(fmtTargets, a)
+	}
+	if len(fmtTargets) == 0 {
+		fmtTargets = []string{"."}
+	}
+	gofmtArgs := append([]string{"-w"}, fmtTargets...)
 
-	// 1. First go fmt pass.
-	cmd := execCommand("go", fmtArgs...)
+	// 1. First gofmt pass.
+	cmd := execCommand("gofmt", gofmtArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -151,8 +165,8 @@ func runFmt(args []string) {
 	err = inco.Format(absDir)
 	_ = err // @inco: err == nil, -panic(err)
 
-	// 3. Second go fmt pass.
-	cmd = execCommand("go", fmtArgs...)
+	// 3. Second gofmt pass.
+	cmd = execCommand("gofmt", gofmtArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
