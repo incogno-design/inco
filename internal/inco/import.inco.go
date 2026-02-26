@@ -1,6 +1,7 @@
 package inco
 
 import (
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -89,24 +90,32 @@ func (e *Engine) buildImportMap() map[string]string {
 
 // collectPackages runs "go list" with the given patterns and records
 // each name → importPath pair in e.importMap.
+// Plain if checks are used for bounds-safety because this function is
+// called during GenFile which must work without overlay (go test).
 func (e *Engine) collectPackages(ambiguous map[string]bool, patterns ...string) {
 	args := append([]string{"list", "-f", "{{.Name}} {{.ImportPath}}"}, patterns...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = e.Root
 	out, err := cmd.Output()
-	_ = err // @inco: err == nil, -return
+	if err != nil {
+		return
+	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		// @inco: line != "", -continue
+		if line == "" {
+			continue
+		}
 
 		parts := strings.SplitN(line, " ", 2)
-		valid := len(parts) == 2 && parts[0] != "" && parts[0] != "main"
-		_ = valid // @inco: valid, -continue
+		if len(parts) != 2 || parts[0] == "" || parts[0] == "main" {
+			continue
+		}
 
 		name, impPath := parts[0], parts[1]
 		// Skip internal and vendored packages — they are not freely importable.
-		internal := internalPkgRe.MatchString(impPath)
-		_ = internal // @inco: !internal, -continue
+		if internalPkgRe.MatchString(impPath) {
+			continue
+		}
 
 		if existing, ok := e.importMap[name]; ok && existing != impPath {
 			ambiguous[name] = true
@@ -212,15 +221,8 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	shadowAST, err := parser.ParseFile(fset, "", content, parser.ParseComments)
 	_ = err // @inco: err == nil, -return(content)
 
-	for _, pkg := range toAdd {
-		if alias, ok := aliases[pkg]; ok {
-			astutil.AddNamedImport(fset, shadowAST, alias, knownPaths[pkg])
-		} else if path, ok := knownPaths[pkg]; ok {
-			astutil.AddImport(fset, shadowAST, path)
-		} else {
-			astutil.AddImport(fset, shadowAST, importMap[pkg])
-		}
-	}
+	err = safeAddImports(fset, shadowAST, toAdd, aliases, knownPaths, importMap)
+	_ = err // @inco: err == nil, -return(content)
 
 	// 5. Re-render.
 	var buf strings.Builder
@@ -228,6 +230,34 @@ func (e *Engine) addMissingImports(content string, origFile *ast.File, directive
 	_ = err // @inco: err == nil, -return(content)
 
 	return buf.String()
+}
+
+// ---------------------------------------------------------------------------
+// Safe import injection
+// ---------------------------------------------------------------------------
+
+// safeAddImports wraps astutil.AddImport calls with panic recovery.
+// On partial/broken ASTs, astutil may panic — this prevents the entire
+// generation from failing.
+func safeAddImports(fset *token.FileSet, f *ast.File, toAdd []string,
+	aliases map[string]string, knownPaths map[string]string,
+	importMap map[string]string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("safeAddImports: %v", r)
+		}
+	}()
+
+	for _, pkg := range toAdd {
+		if alias, ok := aliases[pkg]; ok {
+			astutil.AddNamedImport(fset, f, alias, knownPaths[pkg])
+		} else if path, ok := knownPaths[pkg]; ok {
+			astutil.AddImport(fset, f, path)
+		} else {
+			astutil.AddImport(fset, f, importMap[pkg])
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -286,8 +316,13 @@ func collectDeclaredNames(f *ast.File) map[string]bool {
 }
 
 // collectFieldNames adds all named fields from a field list to the set.
+// The nil check uses plain if because fl is frequently nil (e.g. functions
+// with no return values) and this guard is essential for correctness even
+// when running without overlay (plain go test).
 func collectFieldNames(fl *ast.FieldList, names map[string]bool) {
-	// @inco: fl != nil, -return
+	if fl == nil {
+		return
+	}
 
 	for _, field := range fl.List {
 		for _, id := range field.Names {

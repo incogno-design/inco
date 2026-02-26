@@ -26,6 +26,10 @@ type Engine struct {
 	Overlay    Overlay
 	importMap  map[string]string // lazily built: package name → import path
 	importOnce sync.Once
+
+	mu       sync.Mutex // protects manifest and Overlay during incremental ops
+	manifest *Manifest  // cached manifest (loaded by Init)
+	inited   bool       // true after Init completes
 }
 
 // NewEngine creates an engine rooted at the given directory.
@@ -36,6 +40,170 @@ func NewEngine(root string) *Engine {
 		Root:    root,
 		Overlay: Overlay{Replace: make(map[string]string)},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Init — load cached state
+// ---------------------------------------------------------------------------
+
+// Init loads cached state (manifest, overlay) from disk and validates
+// shadow file integrity. Safe to call multiple times (no-op after first).
+// Called automatically by Run and GenFile.
+func (e *Engine) Init() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	// @inco: !e.inited, -return(nil)
+
+	return e.initLocked()
+}
+
+func (e *Engine) initLocked() error {
+	e.manifest = e.loadManifest()
+	// Ensure manifest.Files is never nil (loadManifest may return nil map
+	// when running without overlay and the manifest file doesn't exist).
+	if e.manifest.Files == nil {
+		e.manifest.Files = make(map[string]ManifestEntry)
+	}
+
+	prev := e.loadOverlayIfExists()
+	if prev != nil {
+		for k, v := range prev {
+			e.Overlay.Replace[k] = v
+		}
+	}
+
+	// Validate shadow files; remove stale entries.
+	for src, entry := range e.manifest.Files {
+		if _, err := os.Stat(entry.ShadowPath); err != nil {
+			delete(e.manifest.Files, src)
+			delete(e.Overlay.Replace, src)
+		}
+	}
+
+	cleanTempFiles(filepath.Join(e.Root, ".inco_cache"))
+	e.inited = true
+	return nil
+}
+
+func (e *Engine) ensureInit() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	// @inco: !e.inited, -return
+
+	e.initLocked()
+}
+
+// ---------------------------------------------------------------------------
+// GenFile / CommitFile / Flush — single-file incremental API
+// ---------------------------------------------------------------------------
+
+// GenFileResult holds the output of single-file shadow generation.
+type GenFileResult struct {
+	Path       string // absolute source file path
+	SrcHash    string // SHA-256 hex of source content
+	ShadowData []byte // generated shadow content
+}
+
+// GenFile processes a single source file and returns its shadow content.
+// Returns (nil, nil) when the file is unchanged (cache hit).
+// Panics from @inco: guards (when running without overlay) are recovered
+// and returned as errors.
+func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = nil
+			err = fmt.Errorf("GenFile: %v", r)
+		}
+	}()
+
+	e.ensureInit()
+
+	absPath, err := filepath.Abs(path)
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: abs: %w", err))
+
+	srcHash, err := hashFile(absPath)
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: hash: %w", err))
+
+	// Check cache.
+	e.mu.Lock()
+	if entry, ok := e.manifest.Files[absPath]; ok && entry.SrcHash == srcHash {
+		if _, serr := os.Stat(entry.ShadowPath); serr == nil {
+			e.mu.Unlock()
+			return nil, nil // unchanged
+		}
+	}
+	e.mu.Unlock()
+
+	// Parse — accept partial AST for degraded mode.
+	fset := token.NewFileSet()
+	f, parseErr := parser.ParseFile(fset, absPath, nil, parser.ParseComments)
+	if f == nil {
+		return nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr)
+	}
+
+	shadow := e.generateShadow(absPath, f, fset)
+	return &GenFileResult{
+		Path:       absPath,
+		SrcHash:    srcHash,
+		ShadowData: shadow,
+	}, nil
+}
+
+// CommitFile writes the shadow file to .inco_cache and updates the
+// in-memory overlay and manifest. Call Flush to persist to disk.
+func (e *Engine) CommitFile(r *GenFileResult) error {
+	if r == nil {
+		return fmt.Errorf("CommitFile: nil result")
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Remove old shadow if it exists.
+	if old, ok := e.Overlay.Replace[r.Path]; ok {
+		os.Remove(old)
+	}
+
+	err := e.writeShadow(r.Path, r.ShadowData)
+	_ = err // @inco: err == nil, -return(err)
+
+	// Update manifest.
+	if sp, ok := e.Overlay.Replace[r.Path]; ok {
+		e.manifest.Files[r.Path] = ManifestEntry{SrcHash: r.SrcHash, ShadowPath: sp}
+	}
+
+	return nil
+}
+
+// Flush persists the current overlay and manifest to disk atomically.
+func (e *Engine) Flush() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	cacheDir := filepath.Join(e.Root, ".inco_cache")
+	err := os.MkdirAll(cacheDir, 0o755)
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: mkdir: %w", err))
+
+	data, err := json.MarshalIndent(e.Overlay, "", "  ")
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal overlay: %w", err))
+
+	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write overlay: %w", err))
+	// @inco: e.manifest != nil, -return(nil)
+
+	data, err = json.MarshalIndent(e.manifest, "", "  ")
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal manifest: %w", err))
+
+	err = atomicWriteFile(filepath.Join(cacheDir, "manifest.json"), data, 0o644)
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write manifest: %w", err))
+
+	return nil
+}
+
+// Close flushes pending state to disk. Call when the engine is no longer
+// needed (e.g. IDE shutdown).
+func (e *Engine) Close() error {
+	return e.Flush()
 }
 
 // ---------------------------------------------------------------------------
@@ -62,8 +230,22 @@ func (e *Engine) Run() error {
 	// @inco: e != nil, -return(fmt.Errorf("Run: nil engine"))
 	// @inco: e.Root != "", -return(fmt.Errorf("Run: root must not be empty"))
 
-	oldManifest := e.loadManifest()
-	oldOverlay := e.loadOverlayIfExists()
+	e.ensureInit()
+
+	// Snapshot state for workers (avoid lock contention).
+	e.mu.Lock()
+	oldOverlay := make(map[string]string, len(e.Overlay.Replace))
+	for k, v := range e.Overlay.Replace {
+		oldOverlay[k] = v
+	}
+	manifestSnap := make(map[string]ManifestEntry, len(e.manifest.Files))
+	for k, v := range e.manifest.Files {
+		manifestSnap[k] = v
+	}
+	// Clear overlay for fresh batch generation — commitResults will repopulate.
+	e.Overlay.Replace = make(map[string]string)
+	e.mu.Unlock()
+
 	paths := collectGoFiles(e.Root)
 
 	// Process files concurrently.
@@ -98,7 +280,7 @@ func (e *Engine) Run() error {
 				}
 
 				// Check cache: source unchanged & shadow file exists → reuse.
-				if prev, ok := oldManifest.Files[path]; ok && prev.SrcHash == srcHash {
+				if prev, ok := manifestSnap[path]; ok && prev.SrcHash == srcHash {
 					if _, err := os.Stat(prev.ShadowPath); err == nil {
 						results[idx] = fileResult{
 							Path: path, SrcHash: srcHash,
@@ -161,6 +343,10 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 			os.Remove(shadowPath)
 		}
 	}
+
+	e.mu.Lock()
+	e.manifest = newManifest
+	e.mu.Unlock()
 
 	err := e.writeOverlay()
 	_ = err // @inco: err == nil, -return(err)
@@ -363,7 +549,7 @@ func (e *Engine) writeOverlay() error {
 	data, err := json.MarshalIndent(e.Overlay, "", "  ")
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeOverlay: marshal: %w", err))
 
-	err = os.WriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
+	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeOverlay: write: %w", err))
 
 	return nil
@@ -411,7 +597,7 @@ func (e *Engine) writeManifest(m *Manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeManifest: marshal: %w", err))
 
-	err = os.WriteFile(e.manifestPath(), data, 0o644)
+	err = atomicWriteFile(e.manifestPath(), data, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("writeManifest: write: %w", err))
 
 	return nil
