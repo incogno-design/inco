@@ -232,6 +232,7 @@ func TestDiagnoseFile_SpacingIssue(t *testing.T) {
 
 // @inco: true
 
+
 func main() {}
 `)
 
