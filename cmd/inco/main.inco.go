@@ -104,7 +104,7 @@ func main() {
 // and exits cleanly with the panic message.
 func guardPanic() {
 	r := recover()
-	// @inco: r == nil, -return
+	// @inco: r != nil, -return
 
 	fmt.Fprintf(os.Stderr, "inco: %v\n", r)
 	os.Exit(1)
