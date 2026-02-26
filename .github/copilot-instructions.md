@@ -94,6 +94,15 @@ _ = err // @inco: err == nil, -panic(err)
 
 ## Coding Guidelines
 
+### 0. Always Run Tests Before Committing
+
+**Every project, every commit.** Before staging or committing any change, run the project's full test suite and confirm all tests pass. No exceptions.
+
+- **This project uses `inco test ./...`** (not `go test`). `inco test` generates the overlay first, then runs `go test -overlay`.
+- If a test fails, fix it before committing — do not commit broken code.
+- "It compiles" is not "it works". Compilation alone is never sufficient verification.
+- After multi-step fixes, run the **full** test suite each time, not just the changed file.
+
 ### Writing New Code
 
 1. **Prefer `@inco:` for contracts** — state what you expect: `// @inco: err == nil, -return(nil, err)`
