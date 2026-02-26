@@ -45,7 +45,7 @@ func FmtFile(path string) (bool, error) {
 	_ = err // @inco: err == nil, -return(false, fmt.Errorf("FmtFile: %w", err))
 
 	result := FormatDirectiveSpacing(string(src))
-	// @inco: result != string(src), -return(false, nil)
+	// @if: result == string(src), -return(false, nil)
 
 	err = os.WriteFile(absPath, []byte(result), 0o644)
 	_ = err // @inco: err == nil, -return(false, fmt.Errorf("FmtFile: write: %w", err))

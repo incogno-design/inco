@@ -57,13 +57,13 @@ func (e *Engine) HandleEvent(ev FileEvent) error {
 	}
 
 	// Only process .go source files (not test files, not already in cache).
-	// @inco: isGoSource(ev.Path), -return(nil)
+	// @if: !isGoSource(ev.Path), -return(nil)
 
 	switch ev.Kind {
 	case EventCreate, EventModify:
 		r, err := e.GenFile(ev.Path)
 		_ = err // @inco: err == nil, -return(fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err))
-		_ = r   // @inco: r != nil, -return(nil)
+		_ = r   // @if: r == nil, -return(nil)
 
 		return e.CommitFile(r)
 
@@ -91,7 +91,7 @@ func (e *Engine) DeleteFile(path string) error {
 	defer e.mu.Unlock()
 
 	shadowPath, ok := e.Overlay.Replace[absPath]
-	_ = ok // @inco: ok, -return(nil)
+	_ = ok // @if: !ok, -return(nil)
 
 	os.Remove(shadowPath)
 	delete(e.Overlay.Replace, absPath)
@@ -133,7 +133,7 @@ func (e *Engine) Reconcile() (int, error) {
 	for _, path := range paths {
 		r, err := e.GenFile(path)
 		_ = err // @inco: err == nil, -return(generated, fmt.Errorf("Reconcile: %w", err))
-		// @inco: r != nil, -continue
+		// @if: r == nil, -continue
 
 		err = e.CommitFile(r)
 		_ = err // @inco: err == nil, -return(generated, fmt.Errorf("Reconcile: %w", err))
@@ -164,9 +164,9 @@ func (e *Engine) InvalidateImports() {
 // isGoSource reports whether path looks like a non-test Go source file
 // that inco should process.
 func isGoSource(path string) bool {
-	_ = path // @inco: strings.HasSuffix(path, ".go"), -return(false)
-	_ = path // @inco: !strings.HasSuffix(path, "_test.go"), -return(false)
-	_ = path // @inco: !strings.Contains(path, ".inco_cache"), -return(false)
+	_ = path // @if: !strings.HasSuffix(path, ".go"), -return(false)
+	_ = path // @if: strings.HasSuffix(path, "_test.go"), -return(false)
+	_ = path // @if: strings.Contains(path, ".inco_cache"), -return(false)
 
 	return true
 }

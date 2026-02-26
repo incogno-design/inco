@@ -29,7 +29,7 @@ func Format(root string) (bool, error) {
 		_ = err // @inco: err == nil, -return(fmt.Errorf("Format: read %s: %w", path, err))
 
 		result := FormatDirectiveSpacing(string(src))
-		// @inco: result != string(src), -return(nil)
+		// @if: result == string(src), -return(nil)
 
 		changed = true
 		return os.WriteFile(path, []byte(result), 0o644)
@@ -59,7 +59,7 @@ func FormatDirectiveSpacing(src string) string {
 	directive.CollectDirectives(f, func(c *ast.Comment, d *directive.Directive) {
 		directiveLines[fset.Position(c.Pos()).Line] = true
 	})
-	// @inco: len(directiveLines) > 0, -return(src)
+	// @if: len(directiveLines) == 0, -return(src)
 
 	lines := strings.Split(src, "\n")
 	var out []string

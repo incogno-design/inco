@@ -60,13 +60,13 @@ func main() {
 			dryRun := false
 			dirIdx := 2
 			for i := 2; i < len(os.Args); i++ {
-				// @inco: os.Args[i] == "--dry-run", -continue
+				// @if: os.Args[i] != "--dry-run", -continue
 
 				dryRun = true
 			}
 			// Find the first non-flag argument as dir.
 			for i := 2; i < len(os.Args); i++ {
-				// @inco: !strings.HasPrefix(os.Args[i], "-"), -continue
+				// @if: strings.HasPrefix(os.Args[i], "-"), -continue
 
 				dirIdx = i
 				break
@@ -111,7 +111,7 @@ func guardPanic() {
 }
 
 func getDir(argIdx int) string {
-	_ = argIdx // @inco: len(os.Args) <= argIdx, -return(os.Args[argIdx])
+	_ = argIdx // @if: len(os.Args) > argIdx, -return(os.Args[argIdx])
 
 	return "."
 }
@@ -196,7 +196,7 @@ func runFmt(args []string) {
 
 	changed, err := analysis.Format(absDir)
 	_ = err     // @inco: err == nil, -panic(err)
-	_ = changed // @inco: changed, -return
+	_ = changed // @if: !changed, -return
 
 	// 3. Second gofmt pass — only needed when spacing was adjusted.
 	cmd = execCommand("gofmt", gofmtArgs...)

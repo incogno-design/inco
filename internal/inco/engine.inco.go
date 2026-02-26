@@ -195,7 +195,7 @@ func (e *Engine) Flush() error {
 
 	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write overlay: %w", err))
-	// @inco: e.manifest != nil, -return(nil)
+	// @if: e.manifest == nil, -return(nil)
 
 	data, err = json.MarshalIndent(e.manifest, "", "  ")
 	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal manifest: %w", err))

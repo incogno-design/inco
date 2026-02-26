@@ -109,18 +109,18 @@ func collectIgnored(root string, out *[]string) {
 		// @inco: err == nil, -return(nil)
 
 		if d.IsDir() {
-			// @inco: !fsutil.SkipDir(d.Name()), -return(filepath.SkipDir)
+			// @if: fsutil.SkipDir(d.Name()), -return(filepath.SkipDir)
 
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
-			// @inco: ig.Match(path, true), -return(nil)
+			// @if: !ig.Match(path, true), -return(nil)
 
 			rel, _ := filepath.Rel(root, path)
 			*out = append(*out, rel+"/")
 			return filepath.SkipDir
 		}
 		isSourceFile := fsutil.IsGoSource(d.Name()) && !fsutil.IsTestFile(d.Name())
-		_ = isSourceFile // @inco: isSourceFile, -return(nil)
+		_ = isSourceFile // @if: !isSourceFile, -return(nil)
 		// @if: !ig.Match(path, false), -return(nil)
 
 		rel, _ := filepath.Rel(root, path)
@@ -169,7 +169,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 		for lineNum := range directiveLines {
 			idx := lineNum // 0-based index of next line
 			isBlankAfter := idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == ""
-			_ = isBlankAfter // @inco: isBlankAfter, -continue
+			_ = isBlankAfter // @if: !isBlankAfter, -continue
 
 			fa.SpacedCount++
 		}
@@ -178,7 +178,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	// 2. Count if statements.
 	ast.Inspect(f, func(n ast.Node) bool {
 		_, ok := n.(*ast.IfStmt)
-		_ = ok // @inco: ok, -return(true)
+		_ = ok // @if: !ok, -return(true)
 
 		fa.IfCount++
 		return true
@@ -196,7 +196,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch fn := n.(type) {
 		case *ast.FuncDecl:
-			// @inco: fn.Body != nil, -return(true)
+			// @if: fn.Body == nil, -return(true)
 
 			name := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) > 0 {
@@ -209,7 +209,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 				end:   fn.Body.End(),
 			})
 		case *ast.FuncLit:
-			// @inco: fn.Body != nil, -return(true)
+			// @if: fn.Body == nil, -return(true)
 
 			funcRanges = append(funcRanges, funcRange{
 				name:  "func literal",

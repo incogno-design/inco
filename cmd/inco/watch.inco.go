@@ -112,7 +112,7 @@ func translateEvent(event fsnotify.Event, root string) (inco.FileEvent, bool) {
 func addDirsRecursive(w *fsnotify.Watcher, root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		// @inco: err == nil, -return(err)
-		// @inco: d.IsDir(), -return(nil)
+		// @if: !d.IsDir(), -return(nil)
 
 		name := d.Name()
 		skipDir := strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata"

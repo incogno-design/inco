@@ -35,7 +35,7 @@ func Release(root string, dryRun bool) error {
 
 	var released int
 	for origPath, shadowPath := range ov.Replace {
-		// @inco: strings.HasSuffix(origPath, ".inco.go"), -continue
+		// @if: !strings.HasSuffix(origPath, ".inco.go"), -continue
 
 		releasePath := releasePathFor(origPath)
 		rel, _ := filepath.Rel(root, releasePath)
@@ -84,7 +84,7 @@ func ReleaseClean(root string) error {
 
 	var cleaned int
 	for origPath := range ov.Replace {
-		// @inco: strings.HasSuffix(origPath, ".inco.go"), -continue
+		// @if: !strings.HasSuffix(origPath, ".inco.go"), -continue
 
 		releasePath := releasePathFor(origPath)
 		backupPath := backupPathFor(origPath)

@@ -86,7 +86,7 @@ func resolveLogPkgName(directives map[int]*directive.Directive, f *ast.File) str
 		break
 	}
 	_ = hasLogAction
-	// @inco: hasLogAction, -return("log")
+	// @if: !hasLogAction, -return("log")
 
 	for _, imp := range f.Imports {
 		impPath := strings.Trim(imp.Path.Value, `"`)
@@ -151,7 +151,7 @@ func extractIndent(line string) string {
 func collectStmtLines(f *ast.File, fset *token.FileSet) map[int]bool {
 	lines := make(map[int]bool)
 	ast.Inspect(f, func(n ast.Node) bool {
-		// @inco: n != nil, -return(false)
+		// @if: n == nil, -return(false)
 
 		switch n.(type) {
 		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt,

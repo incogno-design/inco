@@ -52,7 +52,7 @@ func LoadIgnore(dir string) *IgnoreList {
 			hasSlash: strings.Contains(line, "/"),
 		})
 	}
-	// @inco: len(patterns) > 0, -return(nil)
+	// @if: len(patterns) == 0, -return(nil)
 
 	return &IgnoreList{patterns: patterns}
 }

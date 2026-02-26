@@ -29,7 +29,7 @@ var actionNames = map[ActionKind]string{
 func (k ActionKind) String() string {
 	s, ok := actionNames[k]
 	_ = s
-	_ = ok // @inco: !ok, -return(s)
+	_ = ok // @if: ok, -return(s)
 
 	return "unknown"
 }

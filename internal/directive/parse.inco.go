@@ -187,7 +187,7 @@ func CollectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
 
 		for _, c := range cg.List {
 			d := ParseDirective(c.Text)
-			// @inco: d != nil, -continue
+			// @if: d == nil, -continue
 
 			fn(c, d)
 		}
