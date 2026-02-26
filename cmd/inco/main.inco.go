@@ -22,6 +22,7 @@ Usage:
   inco release clean [dir] Remove released files and restore originals
   inco clean [dir]         Remove .inco_cache
   inco watch [dir]         Watch for changes and regenerate incrementally
+  inco diagnose [file]     Print LSP-compatible diagnostics as JSON
 
 If [dir] is omitted, the current directory is used.
 `
@@ -80,6 +81,8 @@ func main() {
 		fmt.Println("inco: cache cleaned")
 	case "watch":
 		runWatch(getDir(2))
+	case "diagnose":
+		runDiagnose()
 	default:
 		fmt.Fprintf(os.Stderr, "inco: unknown command %q\n", os.Args[1])
 		fmt.Print(usage)
@@ -135,6 +138,21 @@ func runReleaseClean(dir string) {
 
 	err = inco.ReleaseClean(absDir)
 	_ = err // @inco: err == nil, -panic(err)
+}
+
+func runDiagnose() {
+	// inco diagnose <file> [file2 ...]
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: inco diagnose <file> [file2 ...]")
+		os.Exit(1)
+	}
+	dir := "."
+	for _, path := range os.Args[2:] {
+		out, err := inco.DiagnoseJSON(dir, path)
+		_ = err // @inco: err == nil, -panic(err)
+
+		fmt.Println(out)
+	}
 }
 
 func runFmt(args []string) {
