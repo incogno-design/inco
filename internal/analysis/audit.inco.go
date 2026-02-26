@@ -118,7 +118,8 @@ func collectIgnored(root string, out *[]string) {
 			*out = append(*out, rel+"/")
 			return filepath.SkipDir
 		}
-		// @inco: inco.IsGoSource(d.Name()) && !inco.IsTestFile(d.Name()), -return(nil)
+		isSourceFile := inco.IsGoSource(d.Name()) && !inco.IsTestFile(d.Name())
+		_ = isSourceFile // @inco: isSourceFile, -return(nil)
 
 		if ig.Match(path, false) {
 			rel, _ := filepath.Rel(root, path)
@@ -160,23 +161,26 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	src, readErr := os.ReadFile(path)
 	if readErr == nil {
 		srcLines := strings.Split(string(src), "\n")
+		_ = srcLines
 		directiveLines := make(map[int]bool)
 		for _, di := range directives {
 			directiveLines[fset.Position(di.pos).Line] = true
 		}
 		for lineNum := range directiveLines {
 			idx := lineNum // 0-based index of next line
-			if idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == "" {
-				fa.SpacedCount++
-			}
+			isBlankAfter := idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == ""
+			_ = isBlankAfter // @inco: isBlankAfter, -continue
+
+			fa.SpacedCount++
 		}
 	}
 
 	// 2. Count if statements.
 	ast.Inspect(f, func(n ast.Node) bool {
-		if _, ok := n.(*ast.IfStmt); ok {
-			fa.IfCount++
-		}
+		_, ok := n.(*ast.IfStmt)
+		_ = ok // @inco: ok, -return(true)
+
+		fa.IfCount++
 		return true
 	})
 

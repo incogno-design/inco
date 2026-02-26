@@ -15,29 +15,24 @@ import (
 // incrementally regenerates shadows when .go files change.
 func runWatch(dir string) {
 	absDir, err := filepath.Abs(dir)
-	// @inco: err == nil, -panic(err)
-	_ = err
+	_ = err // @inco: err == nil, -panic(err)
 
 	e := inco.NewEngine(absDir)
 	err = e.Init()
-	// @inco: err == nil, -panic(err)
-	_ = err
+	_ = err // @inco: err == nil, -panic(err)
 
 	// Initial full gen.
 	err = e.Run()
-	// @inco: err == nil, -panic(err)
-	_ = err
+	_ = err // @inco: err == nil, -panic(err)
 
 	watcher, err := fsnotify.NewWatcher()
-	// @inco: err == nil, -panic(fmt.Sprintf("watch: %v", err))
-	_ = err
+	_ = err // @inco: err == nil, -panic(fmt.Sprintf("watch: %v", err))
 
 	defer watcher.Close()
 
 	// Watch project directories (recursively).
 	err = addDirsRecursive(watcher, absDir)
-	// @inco: err == nil, -panic(fmt.Sprintf("watch: add dirs: %v", err))
-	_ = err
+	_ = err // @inco: err == nil, -panic(fmt.Sprintf("watch: add dirs: %v", err))
 
 	fmt.Fprintf(os.Stderr, "inco: watching %s for changes...\n", absDir)
 
@@ -58,13 +53,11 @@ func runWatch(dir string) {
 	for {
 		select {
 		case event, ok := <-watcher.Events:
-			if !ok {
-				return
-			}
+			_ = ok // @if: !ok, -return
+
 			ev, skip := translateEvent(event, absDir)
-			if skip {
-				continue
-			}
+			_ = skip // @if: skip, -continue
+
 			debouncer.Send(ev)
 
 			// If a new directory was created, start watching it.
@@ -75,9 +68,8 @@ func runWatch(dir string) {
 			}
 
 		case err, ok := <-watcher.Errors:
-			if !ok {
-				return
-			}
+			_ = ok // @if: !ok, -return
+
 			fmt.Fprintf(os.Stderr, "inco: watcher error: %v\n", err)
 		}
 	}
@@ -96,12 +88,8 @@ func translateEvent(event fsnotify.Event, root string) (inco.FileEvent, bool) {
 		}
 		return inco.FileEvent{}, true
 	}
-	if strings.HasSuffix(path, "_test.go") {
-		return inco.FileEvent{}, true
-	}
-	if strings.Contains(path, ".inco_cache") {
-		return inco.FileEvent{}, true
-	}
+	// @if: strings.HasSuffix(path, "_test.go"), -return(inco.FileEvent{}, true)
+	// @if: strings.Contains(path, ".inco_cache"), -return(inco.FileEvent{}, true)
 
 	var kind inco.FileEventKind
 	switch {
@@ -122,16 +110,13 @@ func translateEvent(event fsnotify.Event, root string) (inco.FileEvent, bool) {
 // skipping hidden dirs, vendor, testdata, and .inco_cache.
 func addDirsRecursive(w *fsnotify.Watcher, root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			return nil
-		}
+		// @inco: err == nil, -return(err)
+		// @inco: d.IsDir(), -return(nil)
+
 		name := d.Name()
-		if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" {
-			return filepath.SkipDir
-		}
+		skipDir := strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata"
+		_ = skipDir // @if: skipDir, -return(filepath.SkipDir)
+
 		return w.Add(path)
 	})
 }

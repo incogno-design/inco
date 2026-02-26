@@ -21,13 +21,10 @@ import (
 // root is used only for computing the RelPath field.
 func AuditFile(root, path string) (*FileAudit, error) {
 	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("AuditFile: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("AuditFile: %w", err))
+
 	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil, fmt.Errorf("AuditFile: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("AuditFile: %w", err))
 
 	fset := token.NewFileSet()
 	fa := auditFile(fset, absRoot, absPath)
@@ -42,24 +39,17 @@ func AuditFile(root, path string) (*FileAudit, error) {
 // Returns true if the file was modified.
 func FmtFile(path string) (bool, error) {
 	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return false, fmt.Errorf("FmtFile: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(false, fmt.Errorf("FmtFile: %w", err))
 
 	src, err := os.ReadFile(absPath)
-	if err != nil {
-		return false, fmt.Errorf("FmtFile: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(false, fmt.Errorf("FmtFile: %w", err))
 
 	result := FormatDirectiveSpacing(string(src))
-	if result == string(src) {
-		return false, nil
-	}
+	// @inco: result != string(src), -return(false, nil)
 
 	err = os.WriteFile(absPath, []byte(result), 0o644)
-	if err != nil {
-		return false, fmt.Errorf("FmtFile: write: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(false, fmt.Errorf("FmtFile: write: %w", err))
+
 	return true, nil
 }
 
@@ -117,14 +107,10 @@ const (
 //   - Invalid directives (severity: warning)
 func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("DiagnoseFile: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("DiagnoseFile: %w", err))
 
 	src, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("DiagnoseFile: read: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("DiagnoseFile: read: %w", err))
 
 	fset := token.NewFileSet()
 	f, parseErr := parser.ParseFile(fset, absPath, src, parser.ParseComments)
@@ -213,9 +199,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 	absRoot, _ := filepath.Abs(root)
 	ast.Inspect(f, func(n ast.Node) bool {
 		fn, ok := n.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			return true
-		}
+		_ = ok // @if: !ok || fn.Body == nil, -return(true)
 
 		// Check if any directive falls within this function body.
 		hasDirective := false
@@ -268,12 +252,10 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 // for piping to an IDE or LSP client.
 func DiagnoseJSON(root, path string) (string, error) {
 	diags, err := DiagnoseFile(root, path)
-	if err != nil {
-		return "", err
-	}
+	_ = err // @inco: err == nil, -return("", err)
+
 	data, err := json.MarshalIndent(diags, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("DiagnoseJSON: %w", err)
-	}
+	_ = err // @inco: err == nil, -return("", fmt.Errorf("DiagnoseJSON: %w", err))
+
 	return string(data), nil
 }

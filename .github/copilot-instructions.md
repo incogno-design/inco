@@ -152,10 +152,22 @@ inco clean .         # delete .inco_cache/
 
 ### 1. Long Expressions → Extract Variable
 
+Directive conditions must stay short and readable. When a condition has multiple clauses (`&&`, `||`) or spans more than ~60 characters, **always** extract it into a named boolean variable first, then reference the variable in the directive:
+
 ```go
+// ❌ WRONG — condition too long, hard to read
+// @if: strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata", -return(filepath.SkipDir)
+
+// ✅ CORRECT — extract, then directive
+skipDir := strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata"
+_ = skipDir // @if: skipDir, -return(filepath.SkipDir)
+
+// ✅ Also good for @inco:
 isInvalid := si.Parent != nil && si.Parent != expected
 _ = isInvalid // @inco: !isInvalid, -panic(...)
 ```
+
+The variable name documents intent and keeps the directive line scannable.
 
 ### 2. Multiple Guards on Same Variable
 

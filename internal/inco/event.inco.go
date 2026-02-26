@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -57,20 +56,14 @@ func (e *Engine) HandleEvent(ev FileEvent) error {
 	}
 
 	// Only process .go source files (not test files, not already in cache).
-	if !isGoSource(ev.Path) {
-		return nil
-	}
+	// @inco: isGoSource(ev.Path), -return(nil)
 
 	switch ev.Kind {
 	case EventCreate, EventModify:
 		r, err := e.GenFile(ev.Path)
-		if err != nil {
-			return fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err)
-		}
-		// nil result means cache hit — no work needed.
-		if r == nil {
-			return nil
-		}
+		_ = err // @inco: err == nil, -return(fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err))
+		// @inco: r != nil, -return(nil)
+
 		return e.CommitFile(r)
 
 	case EventDelete:
@@ -91,17 +84,13 @@ func (e *Engine) DeleteFile(path string) error {
 	e.ensureInit()
 
 	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("DeleteFile: abs: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("DeleteFile: abs: %w", err))
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	shadowPath, ok := e.Overlay.Replace[absPath]
-	if !ok {
-		return nil // nothing to clean up
-	}
+	_ = ok // @inco: ok, -return(nil)
 
 	os.Remove(shadowPath)
 	delete(e.Overlay.Replace, absPath)
@@ -142,15 +131,12 @@ func (e *Engine) Reconcile() (int, error) {
 
 	for _, path := range paths {
 		r, err := e.GenFile(path)
-		if err != nil {
-			return generated, fmt.Errorf("Reconcile: %w", err)
-		}
-		if r == nil {
-			continue // cache hit
-		}
-		if err := e.CommitFile(r); err != nil {
-			return generated, fmt.Errorf("Reconcile: %w", err)
-		}
+		_ = err // @inco: err == nil, -return(generated, fmt.Errorf("Reconcile: %w", err))
+		// @inco: r != nil, -continue
+
+		err = e.CommitFile(r)
+		_ = err // @inco: err == nil, -return(generated, fmt.Errorf("Reconcile: %w", err))
+
 		generated++
 	}
 
@@ -177,16 +163,10 @@ func (e *Engine) InvalidateImports() {
 // isGoSource reports whether path looks like a non-test Go source file
 // that inco should process.
 func isGoSource(path string) bool {
-	if !strings.HasSuffix(path, ".go") {
-		return false
-	}
-	if strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	// Skip files inside .inco_cache.
-	if strings.Contains(path, ".inco_cache") {
-		return false
-	}
+	// @if: !strings.HasSuffix(path, ".go"), -return(false)
+	// @if: strings.HasSuffix(path, "_test.go"), -return(false)
+	// @if: strings.Contains(path, ".inco_cache"), -return(false)
+
 	return true
 }
 

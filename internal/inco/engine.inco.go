@@ -68,11 +68,8 @@ func (e *Engine) initLocked() error {
 		e.manifest.Files = make(map[string]ManifestEntry)
 	}
 
-	prev := e.loadOverlayIfExists()
-	if prev != nil {
-		for k, v := range prev {
-			e.Overlay.Replace[k] = v
-		}
+	for k, v := range e.loadOverlayIfExists() {
+		e.Overlay.Replace[k] = v
 	}
 
 	// Validate shadow files; remove stale entries.
@@ -140,9 +137,8 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 	// Parse — accept partial AST for degraded mode.
 	fset := token.NewFileSet()
 	f, parseErr := parser.ParseFile(fset, absPath, nil, parser.ParseComments)
-	if f == nil {
-		return nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr)
-	}
+	_ = parseErr
+	// @inco: f != nil, -return(nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr))
 
 	shadow := e.generateShadow(absPath, f, fset)
 	return &GenFileResult{
@@ -155,9 +151,7 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 // CommitFile writes the shadow file to .inco_cache and updates the
 // in-memory overlay and manifest. Call Flush to persist to disk.
 func (e *Engine) CommitFile(r *GenFileResult) error {
-	if r == nil {
-		return fmt.Errorf("CommitFile: nil result")
-	}
+	// @inco: r != nil, -return(fmt.Errorf("CommitFile: nil result"))
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -235,28 +229,46 @@ func (e *Engine) Run() error {
 
 	e.ensureInit()
 
-	// Snapshot state for workers (avoid lock contention).
+	oldOverlay, manifestSnap := e.snapshotForRun()
+	paths := collectGoFiles(e.Root)
+
+	results, err := e.processFilesParallel(paths, oldOverlay, manifestSnap)
+	_ = err // @inco: err == nil, -return(err)
+
+	return e.commitResults(results, oldOverlay)
+}
+
+// snapshotForRun copies the current overlay and manifest state for use
+// by parallel workers, then clears the overlay for fresh batch generation.
+// Must be called under no contention (before workers start).
+func (e *Engine) snapshotForRun() (oldOverlay map[string]string, manifestSnap map[string]ManifestEntry) {
 	e.mu.Lock()
-	oldOverlay := make(map[string]string, len(e.Overlay.Replace))
+	defer e.mu.Unlock()
+
+	oldOverlay = make(map[string]string, len(e.Overlay.Replace))
 	for k, v := range e.Overlay.Replace {
 		oldOverlay[k] = v
 	}
-	manifestSnap := make(map[string]ManifestEntry, len(e.manifest.Files))
+	manifestSnap = make(map[string]ManifestEntry, len(e.manifest.Files))
 	for k, v := range e.manifest.Files {
 		manifestSnap[k] = v
 	}
-	// Clear overlay for fresh batch generation — commitResults will repopulate.
 	e.Overlay.Replace = make(map[string]string)
-	e.mu.Unlock()
+	return
+}
 
-	paths := collectGoFiles(e.Root)
-
-	// Process files concurrently.
+// processFilesParallel generates shadow files for all paths using a
+// worker pool. manifestSnap and oldOverlay are read-only snapshots.
+func (e *Engine) processFilesParallel(
+	paths []string,
+	oldOverlay map[string]string,
+	manifestSnap map[string]ManifestEntry,
+) ([]fileResult, error) {
 	results := make([]fileResult, len(paths))
 	workers := min(runtime.GOMAXPROCS(0), len(paths))
 
 	var wg sync.WaitGroup
-	var workerErr atomic.Value // stores first error from a worker
+	var workerErr atomic.Value
 	ch := make(chan int, len(paths))
 	for i := range paths {
 		ch <- i
@@ -272,7 +284,6 @@ func (e *Engine) Run() error {
 					workerErr.CompareAndSwap(nil, fmt.Errorf("%v", r))
 				}
 			}()
-			// Each goroutine gets its own fset to avoid contention.
 			fset := token.NewFileSet()
 			for idx := range ch {
 				path := paths[idx]
@@ -282,7 +293,7 @@ func (e *Engine) Run() error {
 					return
 				}
 
-				// Check cache: source unchanged & shadow file exists → reuse.
+				// Cache hit: source unchanged & shadow exists → reuse.
 				if prev, ok := manifestSnap[path]; ok && prev.SrcHash == srcHash {
 					if _, err := os.Stat(prev.ShadowPath); err == nil {
 						results[idx] = fileResult{
@@ -298,16 +309,14 @@ func (e *Engine) Run() error {
 					os.Remove(old)
 				}
 
-				// Parse and process.
 				f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 				if err != nil {
 					workerErr.CompareAndSwap(nil, fmt.Errorf("parse %s: %w", path, err))
 					return
 				}
-				shadowData := e.generateShadow(path, f, fset)
 				results[idx] = fileResult{
 					Path: path, SrcHash: srcHash,
-					ShadowData: shadowData,
+					ShadowData: e.generateShadow(path, f, fset),
 				}
 			}
 		}()
@@ -315,9 +324,9 @@ func (e *Engine) Run() error {
 	wg.Wait()
 
 	v := workerErr.Load()
-	_ = v // @inco: v == nil, -return(v.(error))
+	_ = v // @inco: v == nil, -return(nil, v.(error))
 
-	return e.commitResults(results, oldOverlay)
+	return results, nil
 }
 
 // commitResults writes shadow files, builds overlay & manifest, and
@@ -379,8 +388,7 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 	// 1. Collect directive lines from AST comments.
 	directives := make(map[int]*Directive) // 1-based line → Directive
 	CollectDirectives(f, func(c *ast.Comment, d *Directive) {
-		line := fset.Position(c.Pos()).Line
-		directives[line] = d
+		directives[fset.Position(c.Pos()).Line] = d
 	})
 
 	// 2. Read source as lines.
@@ -389,9 +397,30 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 
 	lines := strings.Split(string(src), "\n")
 
-	// 3. Classify directives as standalone or inline using AST.
-	standalone := make(map[int]*Directive)
-	inline := make(map[int]*Directive)
+	// 3. Classify directives and resolve log package name.
+	standalone, inline := classifyDirectives(directives, lines, f, fset)
+	logPkgName := resolveLogPkgName(directives, f)
+
+	// 4. Build output lines with injected if-blocks.
+	output := e.buildShadowLines(lines, standalone, inline, path, logPkgName)
+
+	// 5. Add missing imports.
+	content := strings.Join(output, "\n")
+	content = e.addMissingImports(content, f, directives)
+
+	return []byte(content)
+}
+
+// classifyDirectives splits directives into standalone (entire line is a
+// comment) and inline (appended to a code statement) maps.
+func classifyDirectives(
+	directives map[int]*Directive,
+	lines []string,
+	f *ast.File,
+	fset *token.FileSet,
+) (standalone, inline map[int]*Directive) {
+	standalone = make(map[int]*Directive)
+	inline = make(map[int]*Directive)
 
 	stmtLines := collectStmtLines(f, fset)
 	for lineNum, d := range directives {
@@ -406,10 +435,13 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 			inline[lineNum] = d
 		}
 	}
+	return
+}
 
-	// 3b. Determine the effective package name for -log action.
-	//     If the file already imports a non-stdlib "log", we'll need an alias.
-	logPkgName := "log"
+// resolveLogPkgName returns the package name to use for log.Println()
+// in generated code. If the source file imports a non-stdlib package
+// named "log", returns "_inco_log" to avoid conflicts.
+func resolveLogPkgName(directives map[int]*Directive, f *ast.File) string {
 	hasLogAction := false
 	for _, d := range directives {
 		if d.Action == ActionLog {
@@ -417,24 +449,32 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 			break
 		}
 	}
-	if hasLogAction {
-		for _, imp := range f.Imports {
-			impPath := strings.Trim(imp.Path.Value, `"`)
-			var name string
-			if imp.Name != nil {
-				name = imp.Name.Name
-			} else {
-				parts := strings.Split(impPath, "/")
-				name = parts[len(parts)-1]
-			}
-			if name == "log" && impPath != "log" {
-				logPkgName = "_inco_log"
-				break
-			}
+	_ = hasLogAction
+	// @inco: hasLogAction, -return("log")
+
+	for _, imp := range f.Imports {
+		impPath := strings.Trim(imp.Path.Value, `"`)
+		var name string
+		if imp.Name != nil {
+			name = imp.Name.Name
+		} else {
+			parts := strings.Split(impPath, "/")
+			name = parts[len(parts)-1]
+		}
+		if name == "log" && impPath != "log" {
+			return "_inco_log"
 		}
 	}
+	return "log"
+}
 
-	// 4. Build output.
+// buildShadowLines walks source lines and injects if-blocks for each
+// standalone or inline directive, inserting //line markers as needed.
+func (e *Engine) buildShadowLines(
+	lines []string,
+	standalone, inline map[int]*Directive,
+	path, logPkgName string,
+) []string {
 	var output []string
 	prevWasDirective := false
 
@@ -459,12 +499,7 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 			output = append(output, line)
 		}
 	}
-
-	// 5. Add missing imports.
-	content := strings.Join(output, "\n")
-	content = e.addMissingImports(content, f, directives)
-
-	return []byte(content)
+	return output
 }
 
 // ---------------------------------------------------------------------------
