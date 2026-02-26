@@ -180,6 +180,7 @@ func (e *Engine) Flush() error {
 	// Acquire cache lock — blocks until any concurrent inco process releases.
 	lock, err := AcquireCacheLock(e.Root)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: lock: %w", err))
+
 	defer lock.Release()
 
 	e.mu.Lock()
@@ -238,6 +239,7 @@ func (e *Engine) Run() error {
 	// Acquire cache lock — blocks until any concurrent inco process releases.
 	lock, err := AcquireCacheLock(e.Root)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("Run: %w", err))
+
 	defer lock.Release()
 
 	e.ensureInit()

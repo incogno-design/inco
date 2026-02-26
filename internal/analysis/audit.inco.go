@@ -89,6 +89,7 @@ func Audit(root string) (*AuditResult, error) {
 		for _, fn := range f.Funcs {
 			r.TotalFuncs++
 			_ = fn // @if: fn.RequireCount <= 0, -continue
+
 			r.GuardedFuncs++
 		}
 	}
@@ -120,7 +121,6 @@ func collectIgnored(root string, out *[]string) {
 		}
 		isSourceFile := fsutil.IsGoSource(d.Name()) && !fsutil.IsTestFile(d.Name())
 		_ = isSourceFile // @inco: isSourceFile, -return(nil)
-
 		// @if: !ig.Match(path, false), -return(nil)
 
 		rel, _ := filepath.Rel(root, path)
@@ -317,6 +317,7 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 	maxPath := 4 // "File"
 	for _, f := range r.Files {
 		// @if: len(f.RelPath) <= maxPath, -continue
+
 		maxPath = len(f.RelPath)
 	}
 	if maxPath > 50 {
@@ -329,6 +330,7 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 		guarded := 0
 		for _, fn := range f.Funcs {
 			_ = fn // @if: fn.RequireCount <= 0, -continue
+
 			guarded++
 		}
 		display := f.RelPath
@@ -346,6 +348,7 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 		for _, fn := range f.Funcs {
 			skipFn := fn.RequireCount != 0 || fn.Name == "func literal"
 			_ = skipFn // @if: skipFn, -continue
+
 			unguarded = append(unguarded, fmt.Sprintf("  %s:%d  %s", f.RelPath, fn.Line, fn.Name))
 		}
 	}
