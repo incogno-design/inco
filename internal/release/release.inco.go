@@ -1,4 +1,4 @@
-package inco
+package release
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/imnive-design/inco-go/internal/inco"
 )
 
 // releaseHeader is prepended to released files following Go's generated-code
@@ -109,14 +111,14 @@ func ReleaseClean(root string) error {
 // ---------------------------------------------------------------------------
 
 // loadOverlay reads and parses .inco_cache/overlay.json.
-func loadOverlay(root string) (Overlay, error) {
+func loadOverlay(root string) (inco.Overlay, error) {
 	overlayPath := filepath.Join(root, ".inco_cache", "overlay.json")
 	data, err := os.ReadFile(overlayPath)
-	_ = err // @inco: err == nil, -return(Overlay{}, fmt.Errorf("loadOverlay: read %s: %w", overlayPath, err))
+	_ = err // @inco: err == nil, -return(inco.Overlay{}, fmt.Errorf("loadOverlay: read %s: %w", overlayPath, err))
 
-	var ov Overlay
+	var ov inco.Overlay
 	err = json.Unmarshal(data, &ov)
-	_ = err // @inco: err == nil, -return(Overlay{}, fmt.Errorf("loadOverlay: unmarshal: %w", err))
+	_ = err // @inco: err == nil, -return(inco.Overlay{}, fmt.Errorf("loadOverlay: unmarshal: %w", err))
 
 	return ov, nil
 }

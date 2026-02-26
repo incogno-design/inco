@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/imnive-design/inco-go/internal/analysis"
 	inco "github.com/imnive-design/inco-go/internal/inco"
+	"github.com/imnive-design/inco-go/internal/release"
 )
 
 const usage = `inco — incognito assertions for Go.
@@ -114,11 +116,11 @@ func runGen(dir string) {
 	_ = err // @inco: err == nil, -panic(err)
 }
 
-func runAudit(dir string) *inco.AuditResult {
+func runAudit(dir string) *analysis.AuditResult {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
 
-	result, err := inco.Audit(absDir)
+	result, err := analysis.Audit(absDir)
 	_ = err // @inco: err == nil, -panic(err)
 
 	return result
@@ -128,7 +130,7 @@ func runRelease(dir string, dryRun bool) {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
 
-	err = inco.Release(absDir, dryRun)
+	err = release.Release(absDir, dryRun)
 	_ = err // @inco: err == nil, -panic(err)
 }
 
@@ -136,7 +138,7 @@ func runReleaseClean(dir string) {
 	absDir, err := filepath.Abs(dir)
 	_ = err // @inco: err == nil, -panic(err)
 
-	err = inco.ReleaseClean(absDir)
+	err = release.ReleaseClean(absDir)
 	_ = err // @inco: err == nil, -panic(err)
 }
 
@@ -148,7 +150,7 @@ func runDiagnose() {
 	}
 	dir := "."
 	for _, path := range os.Args[2:] {
-		out, err := inco.DiagnoseJSON(dir, path)
+		out, err := analysis.DiagnoseJSON(dir, path)
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println(out)
@@ -184,7 +186,7 @@ func runFmt(args []string) {
 	absDir, err := filepath.Abs(".")
 	_ = err // @inco: err == nil, -panic(err)
 
-	changed, err := inco.Format(absDir)
+	changed, err := analysis.Format(absDir)
 	_ = err     // @inco: err == nil, -panic(err)
 	_ = changed // @inco: changed, -return
 

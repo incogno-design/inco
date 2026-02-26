@@ -1,4 +1,4 @@
-package inco
+package analysis
 
 import (
 	"encoding/json"
@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/imnive-design/inco-go/internal/inco"
 )
 
 // ---------------------------------------------------------------------------
@@ -68,13 +70,13 @@ func FmtFile(path string) (bool, error) {
 // Diagnostic represents a single diagnostic message for a source file,
 // compatible with the Language Server Protocol (LSP).
 type Diagnostic struct {
-	Path     string         `json:"path"`               // absolute file path
-	Range    DiagRange      `json:"range"`               // location
-	Severity DiagSeverity   `json:"severity"`            // error, warning, info, hint
-	Source   string         `json:"source"`              // "inco"
-	Message  string         `json:"message"`             // human-readable message
-	Code     string         `json:"code,omitempty"`      // machine-readable code
-	Tags     []DiagTag      `json:"tags,omitempty"`      // additional tags
+	Path     string       `json:"path"`           // absolute file path
+	Range    DiagRange    `json:"range"`          // location
+	Severity DiagSeverity `json:"severity"`       // error, warning, info, hint
+	Source   string       `json:"source"`         // "inco"
+	Message  string       `json:"message"`        // human-readable message
+	Code     string       `json:"code,omitempty"` // machine-readable code
+	Tags     []DiagTag    `json:"tags,omitempty"` // additional tags
 }
 
 // DiagRange is a zero-based line/column range.
@@ -158,7 +160,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 
 	// 2. Validate directives and detect spacing issues.
 	directiveLines := make(map[int]bool) // 1-based
-	collectDirectives(f, func(c *ast.Comment, d *Directive) {
+	inco.CollectDirectives(f, func(c *ast.Comment, d *inco.Directive) {
 		line := fset.Position(c.Pos()).Line
 		col := fset.Position(c.Pos()).Column - 1 // 0-based
 		endCol := col + len(c.Text)
@@ -188,7 +190,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 			text := c.Text
 			// Look for attempts at @inco: or @if: that don't parse.
 			if (strings.Contains(text, "@inco:") || strings.Contains(text, "@if:")) &&
-				ParseDirective(text) == nil {
+				inco.ParseDirective(text) == nil {
 				line := fset.Position(c.Pos()).Line
 				col := fset.Position(c.Pos()).Column - 1
 				endCol := col + len(text)

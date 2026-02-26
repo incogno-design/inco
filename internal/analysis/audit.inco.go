@@ -1,4 +1,4 @@
-package inco
+package analysis
 
 import (
 	"fmt"
@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/imnive-design/inco-go/internal/inco"
 )
 
 // ---------------------------------------------------------------------------
@@ -65,7 +67,7 @@ func Audit(root string) (*AuditResult, error) {
 	var files []FileAudit
 	var ignored []string
 
-	walkGoFiles(absRoot, func(path string) error {
+	inco.WalkGoFiles(absRoot, func(path string) error {
 		fa := auditFile(fset, absRoot, path)
 		files = append(files, fa)
 		return nil
@@ -101,12 +103,12 @@ func Audit(root string) (*AuditResult, error) {
 // that are skipped by .incoignore (but not by skipDirRe, which covers
 // hidden dirs, vendor, testdata — those are always skipped).
 func collectIgnored(root string, out *[]string) {
-	ig := NewIgnoreTree(root)
+	ig := inco.NewIgnoreTree(root)
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		// @inco: err == nil, -return(nil)
 
 		if d.IsDir() {
-			// @inco: !skipDirRe.MatchString(d.Name()), -return(filepath.SkipDir)
+			// @inco: !inco.SkipDir(d.Name()), -return(filepath.SkipDir)
 
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
@@ -116,7 +118,7 @@ func collectIgnored(root string, out *[]string) {
 			*out = append(*out, rel+"/")
 			return filepath.SkipDir
 		}
-		// @inco: goSourceRe.MatchString(d.Name()) && !testFileRe.MatchString(d.Name()), -return(nil)
+		// @inco: inco.IsGoSource(d.Name()) && !inco.IsTestFile(d.Name()), -return(nil)
 
 		if ig.Match(path, false) {
 			rel, _ := filepath.Rel(root, path)
@@ -144,7 +146,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	}
 	var directives []directiveInfo
 
-	collectDirectives(f, func(c *ast.Comment, d *Directive) {
+	inco.CollectDirectives(f, func(c *ast.Comment, d *inco.Directive) {
 		fa.RequireCount++
 		if d.Negated {
 			fa.IfDirCount++
@@ -216,7 +218,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	})
 
 	// Map each @inco: to its enclosing function.
-	requireCounts := make(map[int]int) // funcRanges index → count
+	requireCounts := make(map[int]int) // funcRanges index -> count
 	for _, d := range directives {
 		// Find innermost enclosing function.
 		bestIdx := -1

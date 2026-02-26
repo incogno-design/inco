@@ -378,7 +378,7 @@ func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) [
 
 	// 1. Collect directive lines from AST comments.
 	directives := make(map[int]*Directive) // 1-based line → Directive
-	collectDirectives(f, func(c *ast.Comment, d *Directive) {
+	CollectDirectives(f, func(c *ast.Comment, d *Directive) {
 		line := fset.Position(c.Pos()).Line
 		directives[line] = d
 	})

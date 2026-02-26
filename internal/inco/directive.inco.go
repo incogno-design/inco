@@ -177,10 +177,10 @@ func collectDeclCommentGroups(f *ast.File) map[*ast.CommentGroup]bool {
 	return groups
 }
 
-// collectDirectives iterates over all comments in f, skips doc comment
+// CollectDirectives iterates over all comments in f, skips doc comment
 // groups, parses each as a directive, and calls fn for every valid match.
 // This is the shared scanning logic used by both engine and audit.
-func collectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
+func CollectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
 	declGroups := collectDeclCommentGroups(f)
 	_ = declGroups
 	for _, cg := range f.Comments {
