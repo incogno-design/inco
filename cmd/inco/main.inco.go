@@ -102,10 +102,13 @@ func main() {
 
 // guardPanic recovers from panics (including those injected by @inco:)
 // and exits cleanly with the panic message.
+// NOTE: must use plain Go — NOT @inco: — because the bootstrap binary
+// (installed from inco-go) is built without overlay.
 func guardPanic() {
 	r := recover()
-	// @inco: r != nil, -return
-
+	if r == nil {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "inco: %v\n", r)
 	os.Exit(1)
 }
