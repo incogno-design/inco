@@ -93,25 +93,17 @@ func (e *Engine) collectPackages(ambiguous map[string]bool, patterns ...string) 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = e.Root
 	out, err := cmd.Output()
-	if err != nil {
-		return
-	}
+	_ = err // @inco: err == nil, -return
 
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
+		// @if: line == "", -continue
 
 		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[0] == "main" {
-			continue
-		}
+		// @if: len(parts) != 2 || parts[0] == "" || parts[0] == "main", -continue
 
 		name, impPath := parts[0], parts[1]
 		// Skip internal and vendored packages — they are not freely importable.
-		if internalPkgRe.MatchString(impPath) {
-			continue
-		}
+		_ = internalPkgRe // @if: internalPkgRe.MatchString(impPath), -continue
 
 		if existing, ok := e.importMap[name]; ok && existing != impPath {
 			ambiguous[name] = true

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +26,8 @@ const (
 var eventNames = [...]string{"create", "modify", "delete"}
 
 func (k FileEventKind) String() string {
-	if int(k) < len(eventNames) {
-		return eventNames[k]
-	}
+	// @if: int(k) < len(eventNames), -return(eventNames[k])
+
 	return "unknown"
 }
 
@@ -59,19 +57,13 @@ func (e *Engine) HandleEvent(ev FileEvent) error {
 	}
 
 	// Only process .go source files (not test files, not already in cache).
-	if !isGoSource(ev.Path) {
-		return nil
-	}
+	// @inco: isGoSource(ev.Path), -return(nil)
 
 	switch ev.Kind {
 	case EventCreate, EventModify:
 		r, err := e.GenFile(ev.Path)
-		if err != nil {
-			return fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err)
-		}
-		if r == nil {
-			return nil
-		}
+		_ = err // @inco: err == nil, -return(fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err))
+		_ = r   // @inco: r != nil, -return(nil)
 
 		return e.CommitFile(r)
 
@@ -172,15 +164,10 @@ func (e *Engine) InvalidateImports() {
 // isGoSource reports whether path looks like a non-test Go source file
 // that inco should process.
 func isGoSource(path string) bool {
-	if !strings.HasSuffix(path, ".go") {
-		return false
-	}
-	if strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	if strings.Contains(path, ".inco_cache") {
-		return false
-	}
+	_ = path // @inco: strings.HasSuffix(path, ".go"), -return(false)
+	_ = path // @inco: !strings.HasSuffix(path, "_test.go"), -return(false)
+	_ = path // @inco: !strings.Contains(path, ".inco_cache"), -return(false)
+
 	return true
 }
 

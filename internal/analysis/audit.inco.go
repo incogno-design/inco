@@ -88,9 +88,8 @@ func Audit(root string) (*AuditResult, error) {
 		r.TotalSpaced += f.SpacedCount
 		for _, fn := range f.Funcs {
 			r.TotalFuncs++
-			if fn.RequireCount > 0 {
-				r.GuardedFuncs++
-			}
+			_ = fn // @if: fn.RequireCount <= 0, -continue
+			r.GuardedFuncs++
 		}
 	}
 	return r, nil
@@ -122,10 +121,10 @@ func collectIgnored(root string, out *[]string) {
 		isSourceFile := fsutil.IsGoSource(d.Name()) && !fsutil.IsTestFile(d.Name())
 		_ = isSourceFile // @inco: isSourceFile, -return(nil)
 
-		if ig.Match(path, false) {
-			rel, _ := filepath.Rel(root, path)
-			*out = append(*out, rel)
-		}
+		// @if: !ig.Match(path, false), -return(nil)
+
+		rel, _ := filepath.Rel(root, path)
+		*out = append(*out, rel)
 		return nil
 	})
 	sort.Strings(*out)
@@ -317,9 +316,8 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 	// Calculate column widths.
 	maxPath := 4 // "File"
 	for _, f := range r.Files {
-		if len(f.RelPath) > maxPath {
-			maxPath = len(f.RelPath)
-		}
+		// @if: len(f.RelPath) <= maxPath, -continue
+		maxPath = len(f.RelPath)
 	}
 	if maxPath > 50 {
 		maxPath = 50
@@ -330,9 +328,8 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 	for _, f := range r.Files {
 		guarded := 0
 		for _, fn := range f.Funcs {
-			if fn.RequireCount > 0 {
-				guarded++
-			}
+			_ = fn // @if: fn.RequireCount <= 0, -continue
+			guarded++
 		}
 		display := f.RelPath
 		if len(display) > maxPath {
@@ -347,9 +344,9 @@ func (r *AuditResult) PrintReport(w io.Writer) {
 	var unguarded []string
 	for _, f := range r.Files {
 		for _, fn := range f.Funcs {
-			if fn.RequireCount == 0 && fn.Name != "func literal" {
-				unguarded = append(unguarded, fmt.Sprintf("  %s:%d  %s", f.RelPath, fn.Line, fn.Name))
-			}
+			skipFn := fn.RequireCount != 0 || fn.Name == "func literal"
+			_ = skipFn // @if: skipFn, -continue
+			unguarded = append(unguarded, fmt.Sprintf("  %s:%d  %s", f.RelPath, fn.Line, fn.Name))
 		}
 	}
 	if len(unguarded) > 0 {

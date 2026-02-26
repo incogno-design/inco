@@ -31,9 +31,7 @@ type ignorePattern struct {
 // filtering and must work without overlay.
 func LoadIgnore(dir string) *IgnoreList {
 	f, err := os.Open(filepath.Join(dir, ".incoignore"))
-	if err != nil {
-		return nil
-	}
+	_ = err // @inco: err == nil, -return(nil)
 
 	defer f.Close()
 
@@ -41,9 +39,8 @@ func LoadIgnore(dir string) *IgnoreList {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+		skipLine := line == "" || strings.HasPrefix(line, "#")
+		_ = skipLine // @if: skipLine, -continue
 
 		dirOnly := strings.HasSuffix(line, "/")
 		if dirOnly {
@@ -55,9 +52,7 @@ func LoadIgnore(dir string) *IgnoreList {
 			hasSlash: strings.Contains(line, "/"),
 		})
 	}
-	if len(patterns) == 0 {
-		return nil
-	}
+	// @inco: len(patterns) > 0, -return(nil)
 
 	return &IgnoreList{patterns: patterns}
 }
@@ -67,15 +62,12 @@ func LoadIgnore(dir string) *IgnoreList {
 // isDir is true when relPath refers to a directory.
 // Plain if checks are used for correctness without overlay.
 func (ig *IgnoreList) Match(relPath string, isDir bool) bool {
-	if ig == nil {
-		return false
-	}
+	// @inco: ig != nil, -return(false)
 
 	base := filepath.Base(relPath)
 	for _, p := range ig.patterns {
-		if p.dirOnly && !isDir {
-			continue
-		}
+		skipNonDir := p.dirOnly && !isDir
+		_ = skipNonDir // @if: skipNonDir, -continue
 
 		if p.hasSlash {
 			// Pattern contains /: match against full relative path.
@@ -83,12 +75,8 @@ func (ig *IgnoreList) Match(relPath string, isDir bool) bool {
 				return true
 			}
 			// Also match as a prefix (anything under that directory).
-			if isDir && relPath == p.pattern {
-				return true
-			}
-			if strings.HasPrefix(relPath, p.pattern+"/") {
-				return true
-			}
+			// @if: isDir && relPath == p.pattern, -return(true)
+			// @if: strings.HasPrefix(relPath, p.pattern+"/"), -return(true)
 		} else {
 			// Pattern without /: match against basename only.
 			if matched, _ := filepath.Match(p.pattern, base); matched {
@@ -142,9 +130,9 @@ func (t *IgnoreTree) EnterDir(dir string) {
 func (t *IgnoreTree) LeaveDir(dir string) {
 	for len(t.layers) > 1 {
 		top := t.layers[len(t.layers)-1].dir
-		if top == dir || strings.HasPrefix(dir, top+string(filepath.Separator)) {
-			break
-		}
+		shouldStop := top == dir || strings.HasPrefix(dir, top+string(filepath.Separator))
+		_ = shouldStop // @if: shouldStop, -break
+
 		t.layers = t.layers[:len(t.layers)-1]
 	}
 }
@@ -153,18 +141,13 @@ func (t *IgnoreTree) LeaveDir(dir string) {
 // It checks all layers from root to the current directory.
 func (t *IgnoreTree) Match(absPath string, isDir bool) bool {
 	for _, layer := range t.layers {
-		if layer.ig == nil {
-			continue
-		}
+		// @if: layer.ig == nil, -continue
 
 		// Compute relPath relative to this layer's directory.
 		rel, err := filepath.Rel(layer.dir, absPath)
-		if err != nil || rel == "." {
-			continue
-		}
-		if layer.ig.Match(rel, isDir) {
-			return true
-		}
+		skipRel := err != nil || rel == "."
+		_ = skipRel // @if: skipRel, -continue
+		// @if: layer.ig.Match(rel, isDir), -return(true)
 	}
 	return false
 }

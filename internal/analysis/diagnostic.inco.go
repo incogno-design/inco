@@ -206,10 +206,11 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 		for line := range directiveLines {
 			pos := fset.Position(fn.Body.Pos()).Line
 			end := fset.Position(fn.Body.End()).Line
-			if line >= pos && line <= end {
-				hasDirective = true
-				break
-			}
+			inRange := line >= pos && line <= end
+			_ = inRange // @if: !inRange, -continue
+
+			hasDirective = true
+			break
 		}
 		if !hasDirective {
 			line := fset.Position(fn.Pos()).Line

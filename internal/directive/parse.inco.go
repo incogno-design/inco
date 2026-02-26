@@ -43,14 +43,10 @@ var actionFromName = map[string]ActionKind{
 // Full syntax: <prefix>: <expr>[, -action[(args...)]]
 func ParseDirective(comment string) *Directive {
 	body := stripComment(comment)
-	if body == "" {
-		return nil
-	}
+	// @inco: body != "", -return(nil)
 
 	m := directiveRe.FindStringSubmatch(body)
-	if m == nil {
-		return nil
-	}
+	// @inco: m != nil, -return(nil)
 
 	prefix := m[1]
 	rest := m[2]
@@ -68,9 +64,7 @@ func ParseDirective(comment string) *Directive {
 		d.Expr = rest
 	}
 
-	if d.Expr == "" {
-		return nil
-	}
+	// @inco: d.Expr != "", -return(nil)
 
 	return d
 }
@@ -85,9 +79,7 @@ func stripComment(s string) string {
 	m := commentRe.FindStringSubmatch(s)
 
 	// m[1] is // content, m[2] is /* */ content; exactly one is non-empty.
-	if m == nil {
-		return ""
-	}
+	// @inco: m != nil, -return("")
 
 	return m[1] + m[2]
 }
@@ -191,15 +183,11 @@ func collectDeclCommentGroups(f *ast.File) map[*ast.CommentGroup]bool {
 func CollectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
 	declGroups := collectDeclCommentGroups(f)
 	for _, cg := range f.Comments {
-		if declGroups[cg] {
-			continue
-		}
+		_ = declGroups // @if: declGroups[cg], -continue
 
 		for _, c := range cg.List {
 			d := ParseDirective(c.Text)
-			if d == nil {
-				continue
-			}
+			// @inco: d != nil, -continue
 
 			fn(c, d)
 		}

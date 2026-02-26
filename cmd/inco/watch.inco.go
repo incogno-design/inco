@@ -78,6 +78,7 @@ func runWatch(dir string) {
 // translateEvent converts an fsnotify event to a FileEvent.
 // Returns skip=true if the event should be ignored.
 func translateEvent(event fsnotify.Event, root string) (inco.FileEvent, bool) {
+	_ = root
 	path := event.Name
 
 	// Skip non-.go files, test files, and cache files.

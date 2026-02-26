@@ -15,40 +15,26 @@ import (
 //
 // Nested .incoignore files in subdirectories are supported: rules in a
 // child directory apply only to that subtree.
-//
-// Plain if checks are used (instead of @inco:/@if:) because this function
-// must work correctly without overlay (e.g. plain go test).
 func WalkGoFiles(root string, fn func(path string) error) error {
 	ig := NewIgnoreTree(root)
 
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+		// @if: err != nil, -return(err)
 
 		if d.IsDir() {
-			name := d.Name()
-			if skipDirRe.MatchString(name) {
-				return filepath.SkipDir
-			}
+			// @if: SkipDir(d.Name()), -return(filepath.SkipDir)
 
 			// Sync the ignore tree to the current position.
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
-			if ig.Match(path, true) {
-				return filepath.SkipDir
-			}
+			// @if: ig.Match(path, true), -return(filepath.SkipDir)
 
 			return nil
 		}
 
-		if !goSourceRe.MatchString(d.Name()) || testFileRe.MatchString(d.Name()) {
-			return nil
-		}
-
-		if ig.Match(path, false) {
-			return nil
-		}
+		skip := !IsGoSource(d.Name()) || IsTestFile(d.Name())
+		_ = skip // @if: skip, -return(nil)
+		// @if: ig.Match(path, false), -return(nil)
 
 		return fn(path)
 	})

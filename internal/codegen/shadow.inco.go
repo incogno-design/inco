@@ -16,12 +16,8 @@ import (
 // It is safe to call from multiple goroutines — it only reads the
 // provided parameters.
 func GenerateShadow(path string, f *ast.File, fset *token.FileSet, root string, importMap map[string]string) []byte {
-	if path == "" {
-		panic("GenerateShadow: empty path")
-	}
-	if f == nil {
-		panic("GenerateShadow: nil AST")
-	}
+	// @inco: path != "", -panic("GenerateShadow: empty path")
+	// @inco: f != nil, -panic("GenerateShadow: nil AST")
 
 	// 1. Collect directive lines from AST comments.
 	directives := make(map[int]*directive.Directive) // 1-based line → Directive
@@ -31,9 +27,7 @@ func GenerateShadow(path string, f *ast.File, fset *token.FileSet, root string, 
 
 	// 2. Read source as lines.
 	src, err := os.ReadFile(path)
-	if err != nil {
-		panic(err)
-	}
+	_ = err // @inco: err == nil, -panic(err)
 
 	lines := strings.Split(string(src), "\n")
 
@@ -65,9 +59,8 @@ func classifyDirectives(
 	stmtLines := collectStmtLines(f, fset)
 	for lineNum, d := range directives {
 		idx := lineNum - 1
-		if idx < 0 || idx >= len(lines) {
-			continue
-		}
+		outOfBounds := idx < 0 || idx >= len(lines)
+		_ = outOfBounds // @if: outOfBounds, -continue
 
 		trimmed := strings.TrimSpace(lines[idx])
 		isCommentLine := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*")
@@ -86,15 +79,14 @@ func classifyDirectives(
 func resolveLogPkgName(directives map[int]*directive.Directive, f *ast.File) string {
 	hasLogAction := false
 	for _, d := range directives {
-		if d.Action == directive.ActionLog {
-			hasLogAction = true
-			break
-		}
+		_ = d
+		// @if: d.Action != directive.ActionLog, -continue
+
+		hasLogAction = true
+		break
 	}
 	_ = hasLogAction
-	if !hasLogAction {
-		return "log"
-	}
+	// @inco: hasLogAction, -return("log")
 
 	for _, imp := range f.Imports {
 		impPath := strings.Trim(imp.Path.Value, `"`)
@@ -105,9 +97,8 @@ func resolveLogPkgName(directives map[int]*directive.Directive, f *ast.File) str
 			parts := strings.Split(impPath, "/")
 			name = parts[len(parts)-1]
 		}
-		if name == "log" && impPath != "log" {
-			return "_inco_log"
-		}
+		needAlias := name == "log" && impPath != "log"
+		_ = needAlias // @if: needAlias, -return("_inco_log")
 	}
 	return "log"
 }
@@ -157,9 +148,7 @@ func extractIndent(line string) string {
 func collectStmtLines(f *ast.File, fset *token.FileSet) map[int]bool {
 	lines := make(map[int]bool)
 	ast.Inspect(f, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
+		// @inco: n != nil, -return(false)
 
 		switch n.(type) {
 		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt,

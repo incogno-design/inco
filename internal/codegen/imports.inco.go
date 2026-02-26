@@ -45,9 +45,7 @@ func addMissingImports(content string, origFile *ast.File, directives map[int]*d
 			knownPaths["log"] = "log"
 		}
 	}
-	if len(needed) == 0 {
-		return content
-	}
+	// @if: len(needed) == 0, -return(content)
 
 	// 1b. Exclude identifiers that are local declarations (variables,
 	// parameters, receivers, etc.) — they look like pkg.Func but are
@@ -56,9 +54,7 @@ func addMissingImports(content string, origFile *ast.File, directives map[int]*d
 	for name := range declared {
 		delete(needed, name)
 	}
-	if len(needed) == 0 {
-		return content
-	}
+	// @if: len(needed) == 0, -return(content)
 
 	// 2. Determine which packages are already imported.
 	imported := make(map[string]bool)
@@ -102,28 +98,20 @@ func addMissingImports(content string, origFile *ast.File, directives map[int]*d
 			toAdd = append(toAdd, pkg)
 		}
 	}
-	if len(toAdd) == 0 {
-		return content
-	}
+	// @if: len(toAdd) == 0, -return(content)
 
 	// 4. Re-parse the shadow content and add imports via astutil.
 	fset := token.NewFileSet()
 	shadowAST, err := parser.ParseFile(fset, "", content, parser.ParseComments)
-	if err != nil {
-		return content
-	}
+	_ = err // @inco: err == nil, -return(content)
 
 	err = safeAddImports(fset, shadowAST, toAdd, aliases, knownPaths, importMap)
-	if err != nil {
-		return content
-	}
+	_ = err // @inco: err == nil, -return(content)
 
 	// 5. Re-render.
 	var buf strings.Builder
 	err = format.Node(&buf, fset, shadowAST)
-	if err != nil {
-		return content
-	}
+	_ = err // @inco: err == nil, -return(content)
 
 	return buf.String()
 }
@@ -216,9 +204,7 @@ func collectDeclaredNames(f *ast.File) map[string]bool {
 // with no return values) and this guard is essential for correctness even
 // when running without overlay (plain go test).
 func collectFieldNames(fl *ast.FieldList, names map[string]bool) {
-	if fl == nil {
-		return
-	}
+	// @inco: fl != nil, -return
 
 	for _, field := range fl.List {
 		for _, id := range field.Names {

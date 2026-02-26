@@ -39,9 +39,7 @@ type Engine struct {
 
 // NewEngine creates an engine rooted at the given directory.
 func NewEngine(root string) *Engine {
-	if root == "" {
-		panic("NewEngine: root must not be empty")
-	}
+	// @inco: root != "", -panic("NewEngine: root must not be empty")
 
 	return &Engine{
 		Root:    root,
@@ -59,9 +57,7 @@ func NewEngine(root string) *Engine {
 func (e *Engine) Init() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.inited {
-		return nil
-	}
+	// @if: e.inited, -return(nil)
 
 	return e.initLocked()
 }
@@ -94,9 +90,7 @@ func (e *Engine) initLocked() error {
 func (e *Engine) ensureInit() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.inited {
-		return
-	}
+	// @if: e.inited, -return
 
 	e.initLocked()
 }
@@ -127,14 +121,10 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 	e.ensureInit()
 
 	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("GenFile: abs: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: abs: %w", err))
 
 	srcHash, err := hashFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("GenFile: hash: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: hash: %w", err))
 
 	// Check cache.
 	e.mu.Lock()
@@ -150,9 +140,7 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 	fset := token.NewFileSet()
 	f, parseErr := parser.ParseFile(fset, absPath, nil, parser.ParseComments)
 	_ = parseErr
-	if f == nil {
-		return nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr)
-	}
+	_ = f // @inco: f != nil, -return(nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr))
 
 	shadow := codegen.GenerateShadow(absPath, f, fset, e.Root, e.buildImportMap())
 	return &GenFileResult{
@@ -165,9 +153,7 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 // CommitFile writes the shadow file to .inco_cache and updates the
 // in-memory overlay and manifest. Call Flush to persist to disk.
 func (e *Engine) CommitFile(r *GenFileResult) error {
-	if r == nil {
-		return fmt.Errorf("CommitFile: nil result")
-	}
+	// @inco: r != nil, -return(fmt.Errorf("CommitFile: nil result"))
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -178,9 +164,7 @@ func (e *Engine) CommitFile(r *GenFileResult) error {
 	}
 
 	err := e.writeShadow(r.Path, r.ShadowData)
-	if err != nil {
-		return err
-	}
+	_ = err // @inco: err == nil, -return(err)
 
 	// Update manifest.
 	if sp, ok := e.Overlay.Replace[r.Path]; ok {
@@ -197,32 +181,20 @@ func (e *Engine) Flush() error {
 
 	cacheDir := filepath.Join(e.Root, ".inco_cache")
 	err := os.MkdirAll(cacheDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("Flush: mkdir: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: mkdir: %w", err))
 
 	data, err := json.MarshalIndent(e.Overlay, "", "  ")
-	if err != nil {
-		return fmt.Errorf("Flush: marshal overlay: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal overlay: %w", err))
 
 	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
-	if err != nil {
-		return fmt.Errorf("Flush: write overlay: %w", err)
-	}
-	if e.manifest == nil {
-		return nil
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write overlay: %w", err))
+	// @inco: e.manifest != nil, -return(nil)
 
 	data, err = json.MarshalIndent(e.manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("Flush: marshal manifest: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal manifest: %w", err))
 
 	err = atomicWriteFile(filepath.Join(cacheDir, "manifest.json"), data, 0o644)
-	if err != nil {
-		return fmt.Errorf("Flush: write manifest: %w", err)
-	}
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write manifest: %w", err))
 
 	return nil
 }
@@ -254,12 +226,8 @@ type fileResult struct {
 //
 // File processing is parallelized across available CPUs.
 func (e *Engine) Run() error {
-	if e == nil {
-		return fmt.Errorf("Run: nil engine")
-	}
-	if e.Root == "" {
-		return fmt.Errorf("Run: root must not be empty")
-	}
+	// @inco: e != nil, -return(fmt.Errorf("Run: nil engine"))
+	// @inco: e.Root != "", -return(fmt.Errorf("Run: root must not be empty"))
 
 	e.ensureInit()
 
@@ -267,9 +235,7 @@ func (e *Engine) Run() error {
 	paths := fsutil.CollectGoFiles(e.Root)
 
 	results, err := e.processFilesParallel(paths, oldOverlay, manifestSnap)
-	if err != nil {
-		return err
-	}
+	_ = err // @inco: err == nil, -return(err)
 
 	return e.commitResults(results, oldOverlay)
 }
@@ -379,9 +345,7 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 			skipped++
 		} else {
 			err := e.writeShadow(r.Path, r.ShadowData)
-			if err != nil {
-				return err
-			}
+			_ = err // @inco: err == nil, -return(err)
 
 			if sp, ok := e.Overlay.Replace[r.Path]; ok {
 				newManifest.Files[r.Path] = ManifestEntry{SrcHash: r.SrcHash, ShadowPath: sp}
@@ -401,17 +365,11 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 	e.mu.Unlock()
 
 	err := e.writeOverlay()
-	if err != nil {
-		return err
-	}
+	_ = err // @inco: err == nil, -return(err)
 
 	err = e.writeManifest(newManifest)
-	if err != nil {
-		return err
-	}
-	if len(e.Overlay.Replace) == 0 {
-		return nil
-	}
+	_ = err // @inco: err == nil, -return(err)
+	// @if: len(e.Overlay.Replace) == 0, -return(nil)
 
 	processed := len(e.Overlay.Replace) - skipped
 	fmt.Fprintf(os.Stderr, "inco: overlay written to %s (%d file(s) mapped, %d processed, %d cached)\n",
