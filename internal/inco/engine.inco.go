@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,8 @@ type Engine struct {
 	mu       sync.Mutex // protects manifest and Overlay during incremental ops
 	manifest *Manifest  // cached manifest (loaded by Init)
 	inited   bool       // true after Init completes
+
+	flushTimer *time.Timer // used by ScheduleFlush; nil when no flush pending
 }
 
 // NewEngine creates an engine rooted at the given directory.

@@ -21,6 +21,7 @@ Usage:
   inco release [--dry-run] [dir]       Copy guards into source tree
   inco release clean [dir] Remove released files and restore originals
   inco clean [dir]         Remove .inco_cache
+  inco watch [dir]         Watch for changes and regenerate incrementally
 
 If [dir] is omitted, the current directory is used.
 `
@@ -77,6 +78,8 @@ func main() {
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
+	case "watch":
+		runWatch(getDir(2))
 	default:
 		fmt.Fprintf(os.Stderr, "inco: unknown command %q\n", os.Args[1])
 		fmt.Print(usage)
