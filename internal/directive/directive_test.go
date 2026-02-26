@@ -1,4 +1,4 @@
-package inco
+package directive
 
 import (
 	"reflect"

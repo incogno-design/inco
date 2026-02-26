@@ -1,0 +1,66 @@
+package codegen
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/imnive-design/inco-go/internal/directive"
+)
+
+// ---------------------------------------------------------------------------
+// Code generation
+// ---------------------------------------------------------------------------
+
+// generateIfBlock returns the text of the injected if-statement.
+//
+//	if !(expr) {
+//	    panic(...)
+//	}
+func generateIfBlock(d *directive.Directive, indent, path string, line int, logPkgName, root string) string {
+	var cond string
+	if d.Negated {
+		cond = d.Expr
+	} else {
+		cond = fmt.Sprintf("!(%s)", d.Expr)
+	}
+	body := buildPanicBody(d, path, line, logPkgName, root)
+	return fmt.Sprintf("%sif %s {\n%s\t%s\n%s}", indent, cond, indent, body, indent)
+}
+
+// buildPanicBody generates the action statement for @inco:.
+//
+//   - ActionReturn + args → return arg0, arg1, ...
+//   - ActionReturn bare   → return
+//   - ActionContinue      → continue
+//   - ActionDo + args     → args[0]; args[1]; ...
+//   - ActionBreak         → break
+//   - ActionPanic + args  → panic(arg)
+//   - ActionPanic default → panic("inco violation: <expr> (at file:line)")
+func buildPanicBody(d *directive.Directive, path string, line int, logPkgName, root string) string {
+	switch d.Action {
+	case directive.ActionReturn:
+		if len(d.ActionArgs) > 0 {
+			return "return " + strings.Join(d.ActionArgs, ", ")
+		}
+		return "return"
+	case directive.ActionContinue:
+		return "continue"
+	case directive.ActionBreak:
+		return "break"
+	case directive.ActionDo:
+		return strings.Join(d.ActionArgs, "; ")
+	case directive.ActionLog:
+		return logPkgName + ".Println(" + strings.Join(d.ActionArgs, ", ") + ")"
+	default: // ActionPanic
+		if len(d.ActionArgs) > 0 {
+			return "panic(" + d.ActionArgs[0] + ")"
+		}
+		relPath := path
+		if rel, err := filepath.Rel(root, path); err == nil {
+			relPath = rel
+		}
+		msg := fmt.Sprintf("inco violation: %s (at %s:%d)", d.Expr, relPath, line)
+		return fmt.Sprintf("panic(%q)", msg)
+	}
+}

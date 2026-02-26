@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/inco"
+	"github.com/imnive-design/inco-go/internal/directive"
 )
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 
 	// 2. Validate directives and detect spacing issues.
 	directiveLines := make(map[int]bool) // 1-based
-	inco.CollectDirectives(f, func(c *ast.Comment, d *inco.Directive) {
+	directive.CollectDirectives(f, func(c *ast.Comment, d *directive.Directive) {
 		line := fset.Position(c.Pos()).Line
 		col := fset.Position(c.Pos()).Column - 1 // 0-based
 		endCol := col + len(c.Text)
@@ -176,7 +176,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 			text := c.Text
 			// Look for attempts at @inco: or @if: that don't parse.
 			if (strings.Contains(text, "@inco:") || strings.Contains(text, "@if:")) &&
-				inco.ParseDirective(text) == nil {
+				directive.ParseDirective(text) == nil {
 				line := fset.Position(c.Pos()).Line
 				col := fset.Position(c.Pos()).Column - 1
 				endCol := col + len(text)

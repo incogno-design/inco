@@ -92,16 +92,12 @@ func TestAtomicWriteFile_Concurrent(t *testing.T) {
 }
 
 func TestAtomicWriteFile_BadDir(t *testing.T) {
-	// Note: atomicWriteFile uses @inco: guards for error handling.
-	// With plain "go test" (no inco overlay), the guards are inert
-	// and os.CreateTemp returning nil will cause a panic.
-	// This test verifies the panic occurs (expected behavior without overlay).
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for nonexistent directory (no inco overlay)")
-		}
-	}()
-	atomicWriteFile("/nonexistent/dir/file.json", []byte("x"), 0o644)
+	// atomicWriteFile uses @inco: guards for error handling.
+	// With inco test (overlay active), the guards return an error.
+	err := atomicWriteFile("/nonexistent/dir/file.json", []byte("x"), 0o644)
+	if err == nil {
+		t.Error("expected error for nonexistent directory")
+	}
 }
 
 func TestCleanTempFiles(t *testing.T) {

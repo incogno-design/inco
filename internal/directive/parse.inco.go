@@ -1,4 +1,4 @@
-package inco
+package directive
 
 import (
 	"go/ast"
@@ -43,10 +43,14 @@ var actionFromName = map[string]ActionKind{
 // Full syntax: <prefix>: <expr>[, -action[(args...)]]
 func ParseDirective(comment string) *Directive {
 	body := stripComment(comment)
-	// @inco: body != "", -return(nil)
+	if body == "" {
+		return nil
+	}
 
 	m := directiveRe.FindStringSubmatch(body)
-	// @inco: m != nil, -return(nil)
+	if m == nil {
+		return nil
+	}
 
 	prefix := m[1]
 	rest := m[2]
@@ -64,7 +68,9 @@ func ParseDirective(comment string) *Directive {
 		d.Expr = rest
 	}
 
-	// @inco: d.Expr != "", -return(nil)
+	if d.Expr == "" {
+		return nil
+	}
 
 	return d
 }
@@ -79,7 +85,9 @@ func stripComment(s string) string {
 	m := commentRe.FindStringSubmatch(s)
 
 	// m[1] is // content, m[2] is /* */ content; exactly one is non-empty.
-	// @inco: m != nil, -return("")
+	if m == nil {
+		return ""
+	}
 
 	return m[1] + m[2]
 }
@@ -182,13 +190,16 @@ func collectDeclCommentGroups(f *ast.File) map[*ast.CommentGroup]bool {
 // This is the shared scanning logic used by both engine and audit.
 func CollectDirectives(f *ast.File, fn func(c *ast.Comment, d *Directive)) {
 	declGroups := collectDeclCommentGroups(f)
-	_ = declGroups
 	for _, cg := range f.Comments {
-		// @inco: !declGroups[cg], -continue
+		if declGroups[cg] {
+			continue
+		}
 
 		for _, c := range cg.List {
 			d := ParseDirective(c.Text)
-			_ = d // @inco: d != nil, -continue
+			if d == nil {
+				continue
+			}
 
 			fn(c, d)
 		}

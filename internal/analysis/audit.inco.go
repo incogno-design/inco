@@ -11,7 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/inco"
+	"github.com/imnive-design/inco-go/internal/directive"
+	"github.com/imnive-design/inco-go/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ func Audit(root string) (*AuditResult, error) {
 	var files []FileAudit
 	var ignored []string
 
-	inco.WalkGoFiles(absRoot, func(path string) error {
+	fsutil.WalkGoFiles(absRoot, func(path string) error {
 		fa := auditFile(fset, absRoot, path)
 		files = append(files, fa)
 		return nil
@@ -103,12 +104,12 @@ func Audit(root string) (*AuditResult, error) {
 // that are skipped by .incoignore (but not by skipDirRe, which covers
 // hidden dirs, vendor, testdata — those are always skipped).
 func collectIgnored(root string, out *[]string) {
-	ig := inco.NewIgnoreTree(root)
+	ig := fsutil.NewIgnoreTree(root)
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		// @inco: err == nil, -return(nil)
 
 		if d.IsDir() {
-			// @inco: !inco.SkipDir(d.Name()), -return(filepath.SkipDir)
+			// @inco: !fsutil.SkipDir(d.Name()), -return(filepath.SkipDir)
 
 			ig.LeaveDir(path)
 			ig.EnterDir(path)
@@ -118,7 +119,7 @@ func collectIgnored(root string, out *[]string) {
 			*out = append(*out, rel+"/")
 			return filepath.SkipDir
 		}
-		isSourceFile := inco.IsGoSource(d.Name()) && !inco.IsTestFile(d.Name())
+		isSourceFile := fsutil.IsGoSource(d.Name()) && !fsutil.IsTestFile(d.Name())
 		_ = isSourceFile // @inco: isSourceFile, -return(nil)
 
 		if ig.Match(path, false) {
@@ -147,7 +148,7 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	}
 	var directives []directiveInfo
 
-	inco.CollectDirectives(f, func(c *ast.Comment, d *inco.Directive) {
+	directive.CollectDirectives(f, func(c *ast.Comment, d *directive.Directive) {
 		fa.RequireCount++
 		if d.Negated {
 			fa.IfDirCount++

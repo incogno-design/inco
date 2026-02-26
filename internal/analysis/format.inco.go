@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/inco"
+	"github.com/imnive-design/inco-go/internal/directive"
+	"github.com/imnive-design/inco-go/internal/fsutil"
 )
 
 // Format walks all Go source files under root and adjusts blank-line
@@ -23,7 +24,7 @@ func Format(root string) (bool, error) {
 	_ = err // @inco: err == nil, -return(false, fmt.Errorf("Format: %w", err))
 
 	changed := false
-	err = inco.WalkGoFiles(absRoot, func(path string) error {
+	err = fsutil.WalkGoFiles(absRoot, func(path string) error {
 		src, err := os.ReadFile(path)
 		_ = err // @inco: err == nil, -return(fmt.Errorf("Format: read %s: %w", path, err))
 
@@ -55,7 +56,7 @@ func FormatDirectiveSpacing(src string) string {
 	_ = err // @inco: err == nil, -return(src)
 
 	directiveLines := make(map[int]bool)
-	inco.CollectDirectives(f, func(c *ast.Comment, d *inco.Directive) {
+	directive.CollectDirectives(f, func(c *ast.Comment, d *directive.Directive) {
 		directiveLines[fset.Position(c.Pos()).Line] = true
 	})
 	// @inco: len(directiveLines) > 0, -return(src)

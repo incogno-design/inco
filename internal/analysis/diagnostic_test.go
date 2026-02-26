@@ -98,8 +98,11 @@ func TestFmtFile_AdjustsSpacing(t *testing.T) {
 	// Source with missing blank line after directive.
 	writeFile(t, path, `package main
 
-// @inco: true
-x := 1
+func main() {
+	// @inco: true
+	x := 1
+	_ = x
+}
 `)
 
 	changed, err := FmtFile(path)
@@ -113,7 +116,7 @@ x := 1
 	data, _ := os.ReadFile(path)
 	result := string(data)
 	// Should have blank line between directive and code.
-	if !strings.Contains(result, "// @inco: true\n\nx := 1") {
+	if !strings.Contains(result, "// @inco: true\n\n\tx := 1") {
 		t.Errorf("expected blank line after directive, got:\n%s", result)
 	}
 }

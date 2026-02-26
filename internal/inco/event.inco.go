@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/imnive-design/inco-go/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -56,13 +59,19 @@ func (e *Engine) HandleEvent(ev FileEvent) error {
 	}
 
 	// Only process .go source files (not test files, not already in cache).
-	// @inco: isGoSource(ev.Path), -return(nil)
+	if !isGoSource(ev.Path) {
+		return nil
+	}
 
 	switch ev.Kind {
 	case EventCreate, EventModify:
 		r, err := e.GenFile(ev.Path)
-		_ = err // @inco: err == nil, -return(fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err))
-		// @inco: r != nil, -return(nil)
+		if err != nil {
+			return fmt.Errorf("HandleEvent %s %s: %w", ev.Kind, ev.Path, err)
+		}
+		if r == nil {
+			return nil
+		}
 
 		return e.CommitFile(r)
 
@@ -126,7 +135,7 @@ func (e *Engine) Reconcile() (int, error) {
 	e.mu.Unlock()
 
 	// 2. Walk current source files and (re)generate as needed.
-	paths := collectGoFiles(e.Root)
+	paths := fsutil.CollectGoFiles(e.Root)
 	generated := 0
 
 	for _, path := range paths {
@@ -163,10 +172,15 @@ func (e *Engine) InvalidateImports() {
 // isGoSource reports whether path looks like a non-test Go source file
 // that inco should process.
 func isGoSource(path string) bool {
-	// @if: !strings.HasSuffix(path, ".go"), -return(false)
-	// @if: strings.HasSuffix(path, "_test.go"), -return(false)
-	// @if: strings.Contains(path, ".inco_cache"), -return(false)
-
+	if !strings.HasSuffix(path, ".go") {
+		return false
+	}
+	if strings.HasSuffix(path, "_test.go") {
+		return false
+	}
+	if strings.Contains(path, ".inco_cache") {
+		return false
+	}
 	return true
 }
 

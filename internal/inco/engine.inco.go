@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -14,6 +13,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/imnive-design/inco-go/internal/codegen"
+	"github.com/imnive-design/inco-go/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -37,7 +39,9 @@ type Engine struct {
 
 // NewEngine creates an engine rooted at the given directory.
 func NewEngine(root string) *Engine {
-	// @inco: root != "", -panic("NewEngine: root must not be empty")
+	if root == "" {
+		panic("NewEngine: root must not be empty")
+	}
 
 	return &Engine{
 		Root:    root,
@@ -55,7 +59,9 @@ func NewEngine(root string) *Engine {
 func (e *Engine) Init() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	// @inco: !e.inited, -return(nil)
+	if e.inited {
+		return nil
+	}
 
 	return e.initLocked()
 }
@@ -88,7 +94,9 @@ func (e *Engine) initLocked() error {
 func (e *Engine) ensureInit() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	// @inco: !e.inited, -return
+	if e.inited {
+		return
+	}
 
 	e.initLocked()
 }
@@ -119,10 +127,14 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 	e.ensureInit()
 
 	absPath, err := filepath.Abs(path)
-	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: abs: %w", err))
+	if err != nil {
+		return nil, fmt.Errorf("GenFile: abs: %w", err)
+	}
 
 	srcHash, err := hashFile(absPath)
-	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: hash: %w", err))
+	if err != nil {
+		return nil, fmt.Errorf("GenFile: hash: %w", err)
+	}
 
 	// Check cache.
 	e.mu.Lock()
@@ -138,9 +150,11 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 	fset := token.NewFileSet()
 	f, parseErr := parser.ParseFile(fset, absPath, nil, parser.ParseComments)
 	_ = parseErr
-	// @inco: f != nil, -return(nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr))
+	if f == nil {
+		return nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr)
+	}
 
-	shadow := e.generateShadow(absPath, f, fset)
+	shadow := codegen.GenerateShadow(absPath, f, fset, e.Root, e.buildImportMap())
 	return &GenFileResult{
 		Path:       absPath,
 		SrcHash:    srcHash,
@@ -151,7 +165,9 @@ func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
 // CommitFile writes the shadow file to .inco_cache and updates the
 // in-memory overlay and manifest. Call Flush to persist to disk.
 func (e *Engine) CommitFile(r *GenFileResult) error {
-	// @inco: r != nil, -return(fmt.Errorf("CommitFile: nil result"))
+	if r == nil {
+		return fmt.Errorf("CommitFile: nil result")
+	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -162,7 +178,9 @@ func (e *Engine) CommitFile(r *GenFileResult) error {
 	}
 
 	err := e.writeShadow(r.Path, r.ShadowData)
-	_ = err // @inco: err == nil, -return(err)
+	if err != nil {
+		return err
+	}
 
 	// Update manifest.
 	if sp, ok := e.Overlay.Replace[r.Path]; ok {
@@ -179,20 +197,32 @@ func (e *Engine) Flush() error {
 
 	cacheDir := filepath.Join(e.Root, ".inco_cache")
 	err := os.MkdirAll(cacheDir, 0o755)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: mkdir: %w", err))
+	if err != nil {
+		return fmt.Errorf("Flush: mkdir: %w", err)
+	}
 
 	data, err := json.MarshalIndent(e.Overlay, "", "  ")
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal overlay: %w", err))
+	if err != nil {
+		return fmt.Errorf("Flush: marshal overlay: %w", err)
+	}
 
 	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write overlay: %w", err))
-	// @inco: e.manifest != nil, -return(nil)
+	if err != nil {
+		return fmt.Errorf("Flush: write overlay: %w", err)
+	}
+	if e.manifest == nil {
+		return nil
+	}
 
 	data, err = json.MarshalIndent(e.manifest, "", "  ")
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal manifest: %w", err))
+	if err != nil {
+		return fmt.Errorf("Flush: marshal manifest: %w", err)
+	}
 
 	err = atomicWriteFile(filepath.Join(cacheDir, "manifest.json"), data, 0o644)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write manifest: %w", err))
+	if err != nil {
+		return fmt.Errorf("Flush: write manifest: %w", err)
+	}
 
 	return nil
 }
@@ -224,16 +254,22 @@ type fileResult struct {
 //
 // File processing is parallelized across available CPUs.
 func (e *Engine) Run() error {
-	// @inco: e != nil, -return(fmt.Errorf("Run: nil engine"))
-	// @inco: e.Root != "", -return(fmt.Errorf("Run: root must not be empty"))
+	if e == nil {
+		return fmt.Errorf("Run: nil engine")
+	}
+	if e.Root == "" {
+		return fmt.Errorf("Run: root must not be empty")
+	}
 
 	e.ensureInit()
 
 	oldOverlay, manifestSnap := e.snapshotForRun()
-	paths := collectGoFiles(e.Root)
+	paths := fsutil.CollectGoFiles(e.Root)
 
 	results, err := e.processFilesParallel(paths, oldOverlay, manifestSnap)
-	_ = err // @inco: err == nil, -return(err)
+	if err != nil {
+		return err
+	}
 
 	return e.commitResults(results, oldOverlay)
 }
@@ -316,7 +352,7 @@ func (e *Engine) processFilesParallel(
 				}
 				results[idx] = fileResult{
 					Path: path, SrcHash: srcHash,
-					ShadowData: e.generateShadow(path, f, fset),
+					ShadowData: codegen.GenerateShadow(path, f, fset, e.Root, e.buildImportMap()),
 				}
 			}
 		}()
@@ -324,7 +360,9 @@ func (e *Engine) processFilesParallel(
 	wg.Wait()
 
 	v := workerErr.Load()
-	_ = v // @inco: v == nil, -return(nil, v.(error))
+	if v != nil {
+		return nil, v.(error)
+	}
 
 	return results, nil
 }
@@ -341,7 +379,9 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 			skipped++
 		} else {
 			err := e.writeShadow(r.Path, r.ShadowData)
-			_ = err // @inco: err == nil, -return(err)
+			if err != nil {
+				return err
+			}
 
 			if sp, ok := e.Overlay.Replace[r.Path]; ok {
 				newManifest.Files[r.Path] = ManifestEntry{SrcHash: r.SrcHash, ShadowPath: sp}
@@ -361,200 +401,23 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 	e.mu.Unlock()
 
 	err := e.writeOverlay()
-	_ = err // @inco: err == nil, -return(err)
+	if err != nil {
+		return err
+	}
 
 	err = e.writeManifest(newManifest)
-	_ = err // @inco: err == nil, -return(err)
-	// @inco: len(e.Overlay.Replace) > 0, -return(nil)
+	if err != nil {
+		return err
+	}
+	if len(e.Overlay.Replace) == 0 {
+		return nil
+	}
 
 	processed := len(e.Overlay.Replace) - skipped
 	fmt.Fprintf(os.Stderr, "inco: overlay written to %s (%d file(s) mapped, %d processed, %d cached)\n",
 		filepath.Join(e.Root, ".inco_cache", "overlay.json"),
 		len(e.Overlay.Replace), processed, skipped)
 	return nil
-}
-
-// ---------------------------------------------------------------------------
-// File processing
-// ---------------------------------------------------------------------------
-
-// generateShadow produces the shadow file content for a source file.
-// It is safe to call from multiple goroutines — it only reads e.Root
-// and uses the provided fset.
-func (e *Engine) generateShadow(path string, f *ast.File, fset *token.FileSet) []byte {
-	// @inco: path != "", -panic("generateShadow: empty path")
-	// @inco: f != nil, -panic("generateShadow: nil AST")
-
-	// 1. Collect directive lines from AST comments.
-	directives := make(map[int]*Directive) // 1-based line → Directive
-	CollectDirectives(f, func(c *ast.Comment, d *Directive) {
-		directives[fset.Position(c.Pos()).Line] = d
-	})
-
-	// 2. Read source as lines.
-	src, err := os.ReadFile(path)
-	_ = err // @inco: err == nil, -panic(err)
-
-	lines := strings.Split(string(src), "\n")
-
-	// 3. Classify directives and resolve log package name.
-	standalone, inline := classifyDirectives(directives, lines, f, fset)
-	logPkgName := resolveLogPkgName(directives, f)
-
-	// 4. Build output lines with injected if-blocks.
-	output := e.buildShadowLines(lines, standalone, inline, path, logPkgName)
-
-	// 5. Add missing imports.
-	content := strings.Join(output, "\n")
-	content = e.addMissingImports(content, f, directives)
-
-	return []byte(content)
-}
-
-// classifyDirectives splits directives into standalone (entire line is a
-// comment) and inline (appended to a code statement) maps.
-func classifyDirectives(
-	directives map[int]*Directive,
-	lines []string,
-	f *ast.File,
-	fset *token.FileSet,
-) (standalone, inline map[int]*Directive) {
-	standalone = make(map[int]*Directive)
-	inline = make(map[int]*Directive)
-
-	stmtLines := collectStmtLines(f, fset)
-	for lineNum, d := range directives {
-		idx := lineNum - 1
-		// @inco: idx >= 0 && idx < len(lines), -continue
-
-		trimmed := strings.TrimSpace(lines[idx])
-		isCommentLine := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*")
-		if isCommentLine {
-			standalone[lineNum] = d
-		} else if stmtLines[lineNum] {
-			inline[lineNum] = d
-		}
-	}
-	return
-}
-
-// resolveLogPkgName returns the package name to use for log.Println()
-// in generated code. If the source file imports a non-stdlib package
-// named "log", returns "_inco_log" to avoid conflicts.
-func resolveLogPkgName(directives map[int]*Directive, f *ast.File) string {
-	hasLogAction := false
-	for _, d := range directives {
-		if d.Action == ActionLog {
-			hasLogAction = true
-			break
-		}
-	}
-	_ = hasLogAction
-	// @inco: hasLogAction, -return("log")
-
-	for _, imp := range f.Imports {
-		impPath := strings.Trim(imp.Path.Value, `"`)
-		var name string
-		if imp.Name != nil {
-			name = imp.Name.Name
-		} else {
-			parts := strings.Split(impPath, "/")
-			name = parts[len(parts)-1]
-		}
-		if name == "log" && impPath != "log" {
-			return "_inco_log"
-		}
-	}
-	return "log"
-}
-
-// buildShadowLines walks source lines and injects if-blocks for each
-// standalone or inline directive, inserting //line markers as needed.
-func (e *Engine) buildShadowLines(
-	lines []string,
-	standalone, inline map[int]*Directive,
-	path, logPkgName string,
-) []string {
-	var output []string
-	prevWasDirective := false
-
-	for idx, line := range lines {
-		lineNum := idx + 1
-
-		if d, ok := standalone[lineNum]; ok {
-			indent := extractIndent(line)
-			output = append(output, fmt.Sprintf("//line %s:%d", path, lineNum))
-			output = append(output, e.generateIfBlock(d, indent, path, lineNum, logPkgName))
-			prevWasDirective = true
-		} else if d, ok := inline[lineNum]; ok {
-			output = append(output, line)
-			indent := extractIndent(line)
-			output = append(output, e.generateIfBlock(d, indent, path, lineNum, logPkgName))
-			prevWasDirective = true
-		} else {
-			if prevWasDirective {
-				output = append(output, fmt.Sprintf("//line %s:%d", path, lineNum))
-				prevWasDirective = false
-			}
-			output = append(output, line)
-		}
-	}
-	return output
-}
-
-// ---------------------------------------------------------------------------
-// Code generation
-// ---------------------------------------------------------------------------
-
-// generateIfBlock returns the text of the injected if-statement.
-//
-//	if !(expr) {
-//	    panic(...)
-//	}
-func (e *Engine) generateIfBlock(d *Directive, indent, path string, line int, logPkgName string) string {
-	var cond string
-	if d.Negated {
-		cond = d.Expr
-	} else {
-		cond = fmt.Sprintf("!(%s)", d.Expr)
-	}
-	body := e.buildPanicBody(d, path, line, logPkgName)
-	return fmt.Sprintf("%sif %s {\n%s\t%s\n%s}", indent, cond, indent, body, indent)
-}
-
-// buildPanicBody generates the action statement for @inco:.
-//
-//   - ActionReturn + args → return arg0, arg1, ...
-//   - ActionReturn bare   → return
-//   - ActionContinue      → continue
-//   - ActionDo + args     → args[0]; args[1]; ...
-//   - ActionBreak         → break
-//   - ActionPanic + args  → panic(arg)
-//   - ActionPanic default → panic("inco violation: <expr> (at file:line)")
-func (e *Engine) buildPanicBody(d *Directive, path string, line int, logPkgName string) string {
-	switch d.Action {
-	case ActionReturn:
-		// @inco: len(d.ActionArgs) == 0, -return("return " + strings.Join(d.ActionArgs, ", "))
-
-		return "return"
-	case ActionContinue:
-		return "continue"
-	case ActionBreak:
-		return "break"
-	case ActionDo:
-		return strings.Join(d.ActionArgs, "; ")
-	case ActionLog:
-		return logPkgName + ".Println(" + strings.Join(d.ActionArgs, ", ") + ")"
-	default: // ActionPanic
-		// @inco: len(d.ActionArgs) == 0, -return("panic(" + d.ActionArgs[0] + ")")
-
-		relPath := path
-		if rel, err := filepath.Rel(e.Root, path); err == nil {
-			relPath = rel
-		}
-		msg := fmt.Sprintf("inco violation: %s (at %s:%d)", d.Expr, relPath, line)
-		return fmt.Sprintf("panic(%q)", msg)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -648,32 +511,4 @@ func hashFile(path string) (string, error) {
 
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h), nil
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-// extractIndent returns the leading whitespace of a line.
-func extractIndent(line string) string {
-	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-}
-
-// collectStmtLines walks the AST and returns a set of line numbers that
-// contain statements inside function bodies. A directive comment whose
-// line appears in this set is classified as "inline" rather than "standalone".
-func collectStmtLines(f *ast.File, fset *token.FileSet) map[int]bool {
-	lines := make(map[int]bool)
-	ast.Inspect(f, func(n ast.Node) bool {
-		// @inco: n != nil, -return(false)
-
-		switch n.(type) {
-		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt,
-			*ast.IncDecStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt,
-			*ast.BranchStmt:
-			lines[fset.Position(n.Pos()).Line] = true
-		}
-		return true
-	})
-	return lines
 }

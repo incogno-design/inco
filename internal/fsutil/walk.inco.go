@@ -1,4 +1,6 @@
-package inco
+// Package fsutil provides file-system traversal and ignore-list support
+// for the inco engine and analysis tools.
+package fsutil
 
 import (
 	"os"
@@ -52,10 +54,10 @@ func WalkGoFiles(root string, fn func(path string) error) error {
 	})
 }
 
-// collectGoFiles returns all non-test .go file paths under root,
+// CollectGoFiles returns all non-test .go file paths under root,
 // respecting skipDirRe and .incoignore. This is a convenience wrapper
 // around WalkGoFiles for callers that need the full path list up front.
-func collectGoFiles(root string) []string {
+func CollectGoFiles(root string) []string {
 	var paths []string
 	WalkGoFiles(root, func(path string) error {
 		paths = append(paths, path)
