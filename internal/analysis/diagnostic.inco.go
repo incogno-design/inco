@@ -145,21 +145,68 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 	lines := strings.Split(string(src), "\n")
 
 	// 2. Validate directives and detect spacing issues.
+	//
+	// Collect all directive line numbers first, then check spacing.
+	// Spacing rules (must match FormatDirectiveSpacing):
+	//   - Between consecutive directives: no blank lines allowed.
+	//   - After directive block, before closing brace: no blank lines.
+	//   - After directive block, before other code: exactly one blank line.
+	//   - Multiple blank lines anywhere after a directive: collapse to 0 or 1.
 	directiveLines := make(map[int]bool) // 1-based
+	type directiveInfo struct {
+		line   int
+		col    int
+		endCol int
+	}
+	var allDirectives []directiveInfo
+
 	directive.CollectDirectives(f, func(c *ast.Comment, d *directive.Directive) {
 		line := fset.Position(c.Pos()).Line
 		col := fset.Position(c.Pos()).Column - 1 // 0-based
 		endCol := col + len(c.Text)
 		directiveLines[line] = true
+		allDirectives = append(allDirectives, directiveInfo{line, col, endCol})
+	})
 
-		// Check for spacing: directive followed by blank line.
-		idx := line // 0-based index of next line
-		if idx < len(lines) && strings.TrimSpace(lines[idx]) == "" {
+	for _, di := range allDirectives {
+		idx := di.line // 0-based index of next line (line is 1-based)
+		_ = idx        // @if: idx >= len(lines), -continue
+
+		// Count blank lines after the directive.
+		blankCount := 0
+		j := idx
+		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+			blankCount++
+			j++
+		}
+
+		_ = blankCount // @if: blankCount == 0, -continue
+
+		// Determine what follows the blank lines.
+		atEnd := j >= len(lines)
+		nextIsDirective := !atEnd && directiveLines[j+1]
+		nextIsBrace := !atEnd && strings.HasPrefix(strings.TrimSpace(lines[j]), "}")
+
+		// Apply FormatDirectiveSpacing rules:
+		needsReport := false
+		if nextIsDirective {
+			// Between consecutive directives: no blanks allowed.
+			needsReport = true
+		} else if nextIsBrace {
+			// Before closing brace: no blanks allowed.
+			needsReport = true
+		} else if blankCount > 1 {
+			// Before other code: exactly one blank line (multiple → collapse).
+			needsReport = true
+		}
+		// blankCount == 1 before non-directive, non-brace code → correct, skip.
+
+		if needsReport {
 			diags = append(diags, Diagnostic{
 				Path: absPath,
 				Range: DiagRange{
-					Start: DiagPosition{line - 1, col},
-					End:   DiagPosition{line - 1, endCol},
+					Start: DiagPosition{di.line - 1, di.col},
+					End:   DiagPosition{di.line - 1, di.endCol},
 				},
 				Severity: DiagInfo,
 				Source:   "inco",
@@ -168,7 +215,7 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 				Tags:     []DiagTag{DiagTagUnnecessary},
 			})
 		}
-	})
+	}
 
 	// 3. Check for invalid directive syntax in comments.
 	for _, cg := range f.Comments {

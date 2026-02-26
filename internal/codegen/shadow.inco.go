@@ -124,6 +124,9 @@ func buildShadowLines(
 		} else if d, ok := inline[lineNum]; ok {
 			output = append(output, line)
 			indent := extractIndent(line)
+			// Pin the guard block to the same line number as the directive
+			// so Go compiler errors point at the @inco: line, not lineNum+1.
+			output = append(output, fmt.Sprintf("//line %s:%d", path, lineNum))
 			output = append(output, generateIfBlock(d, indent, path, lineNum, logPkgName, root))
 			prevWasDirective = true
 		} else {

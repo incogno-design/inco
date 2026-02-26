@@ -175,12 +175,18 @@ func (e *Engine) CommitFile(r *GenFileResult) error {
 }
 
 // Flush persists the current overlay and manifest to disk atomically.
+// Acquires the cache lock to serialize with other inco processes.
 func (e *Engine) Flush() error {
+	// Acquire cache lock — blocks until any concurrent inco process releases.
+	lock, err := AcquireCacheLock(e.Root)
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: lock: %w", err))
+	defer lock.Release()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	cacheDir := filepath.Join(e.Root, ".inco_cache")
-	err := os.MkdirAll(cacheDir, 0o755)
+	err = os.MkdirAll(cacheDir, 0o755)
 	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: mkdir: %w", err))
 
 	data, err := json.MarshalIndent(e.Overlay, "", "  ")
@@ -228,6 +234,11 @@ type fileResult struct {
 func (e *Engine) Run() error {
 	// @inco: e != nil, -return(fmt.Errorf("Run: nil engine"))
 	// @inco: e.Root != "", -return(fmt.Errorf("Run: root must not be empty"))
+
+	// Acquire cache lock — blocks until any concurrent inco process releases.
+	lock, err := AcquireCacheLock(e.Root)
+	_ = err // @inco: err == nil, -return(fmt.Errorf("Run: %w", err))
+	defer lock.Release()
 
 	e.ensureInit()
 

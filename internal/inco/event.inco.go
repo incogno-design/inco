@@ -26,7 +26,7 @@ const (
 var eventNames = [...]string{"create", "modify", "delete"}
 
 func (k FileEventKind) String() string {
-	// @if: int(k) < len(eventNames), -return(eventNames[k])
+	_ = eventNames // @if: int(k) < len(eventNames), -return(eventNames[k])
 
 	return "unknown"
 }

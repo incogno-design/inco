@@ -77,7 +77,15 @@ func main() {
 		}
 	case "clean":
 		dir := getDir(2)
-		err := os.RemoveAll(filepath.Join(dir, ".inco_cache"))
+		absDir, err := filepath.Abs(dir)
+		_ = err // @inco: err == nil, -panic(err)
+
+		// Acquire lock so watch/gen can't write while we delete.
+		lock, err := inco.AcquireCacheLock(absDir)
+		_ = err // @inco: err == nil, -panic(err)
+
+		err = os.RemoveAll(filepath.Join(absDir, ".inco_cache"))
+		lock.Release()
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
@@ -96,7 +104,7 @@ func main() {
 // and exits cleanly with the panic message.
 func guardPanic() {
 	r := recover()
-	// @inco: r == nil, -return
+	// @inco: r != nil, -return
 
 	fmt.Fprintf(os.Stderr, "inco: %v\n", r)
 	os.Exit(1)
