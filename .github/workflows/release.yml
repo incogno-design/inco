@@ -22,7 +22,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install inco
-        run: go install github.com/imnive-design/inco-go/cmd/inco@latest
+        run: go install github.com/incogno-design/inco/cmd/inco@latest
 
       - name: Smoke test — self-bootstrap
         run: |
