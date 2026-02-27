@@ -1,19 +1,20 @@
-name: Release to inco-go
+name: Release inco → main
 
 on:
   push:
-    branches: [main]
+    branches: [inco]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
-    if: github.repository == 'imnive-design/inco'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout inco branch
         uses: actions/checkout@v4
+        with:
+          ref: inco
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -31,7 +32,7 @@ jobs:
 
           # Clean up overlay so release starts fresh
           rm -rf .inco_cache
-          echo "inco-go: self-bootstrap smoke test passed"
+          echo "incogno design: self-bootstrap smoke test passed"
 
       - name: Release
         run: |
@@ -51,34 +52,17 @@ jobs:
       - name: Verify released code compiles
         run: |
           go build ./...
-          echo "inco-go: build verification passed"
+          echo "release: build verification passed"
 
       - name: Verify released tests pass
         run: |
           go test ./...
-          echo "inco-go: test verification passed"
+          echo "release: test verification passed"
 
-      - name: Push to inco-go
-        env:
-          INCO_GO_TOKEN: ${{ secrets.INCO_GO_TOKEN }}
+      - name: Push to main
         run: |
-          git clone "https://x-access-token:${INCO_GO_TOKEN}@github.com/imnive-design/inco-go.git" /tmp/inco-go
-
-          # Sync everything except .git and .github
-          rsync -av --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            ./ /tmp/inco-go/
-
-          cd /tmp/inco-go
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-
-          if git diff --cached --quiet; then
-            echo "inco-go: no changes to push"
-          else
-            git commit -m "release: imnive-design/inco@${GITHUB_SHA::7}"
-            git push
-            echo "inco-go: pushed release"
-          fi
+          git commit -m "release: inco@${GITHUB_SHA::7}" --allow-empty
+          git push origin HEAD:main --force
