@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	inco "github.com/imnive-design/inco-go/internal/inco"
+	inco "github.com/incogno-design/inco/internal/inco"
 )
 
 // runWatch starts a file watcher on the project directory and

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/directive"
+	"github.com/incogno-design/inco/internal/directive"
 	"golang.org/x/tools/go/ast/astutil"
 )
 

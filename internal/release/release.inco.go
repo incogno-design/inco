@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/inco"
+	"github.com/incogno-design/inco/internal/inco"
 )
 
 // releaseHeader is prepended to released files following Go's generated-code

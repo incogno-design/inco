@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/imnive-design/inco-go/internal/codegen"
-	"github.com/imnive-design/inco-go/internal/fsutil"
+	"github.com/incogno-design/inco/internal/codegen"
+	"github.com/incogno-design/inco/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------

@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/directive"
-	"github.com/imnive-design/inco-go/internal/fsutil"
+	"github.com/incogno-design/inco/internal/directive"
+	"github.com/incogno-design/inco/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,8 @@ type FileAudit struct {
 	RequireCount int         // total directives (@inco: + @if:)
 	IncoCount    int         // @inco: directives only
 	IfDirCount   int         // @if: directives only
-	SpacedCount  int         // directives followed by a blank line
+
+	SpacedCount int // directives followed by a blank line
 }
 
 // AuditResult is the aggregate report.
@@ -49,7 +50,8 @@ type AuditResult struct {
 	TotalDirectives int
 	TotalInco       int // @inco: count
 	TotalIfDir      int // @if: count
-	TotalSpaced     int // directives followed by a blank line
+
+	TotalSpaced int // directives followed by a blank line
 }
 
 // ---------------------------------------------------------------------------

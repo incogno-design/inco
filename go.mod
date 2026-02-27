@@ -1,4 +1,4 @@
-module github.com/imnive-design/inco-go
+module github.com/incogno-design/inco
 
 go 1.25.0
 

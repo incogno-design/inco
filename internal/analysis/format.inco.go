@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/directive"
-	"github.com/imnive-design/inco-go/internal/fsutil"
+	"github.com/incogno-design/inco/internal/directive"
+	"github.com/incogno-design/inco/internal/fsutil"
 )
 
 // Format walks all Go source files under root and adjusts blank-line

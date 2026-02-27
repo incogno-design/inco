@@ -146,7 +146,7 @@ Third-party dependencies used in your module are resolved dynamically via `go li
 
 ```bash
 # Install
-go install github.com/imnive-design/inco-go/cmd/inco@latest
+go install github.com/incogno-design/inco/cmd/inco@latest
 
 # Generate overlay
 inco gen [dir]
@@ -296,7 +296,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install inco
-        run: go install github.com/imnive-design/inco-go/cmd/inco@latest
+        run: go install github.com/incogno-design/inco/cmd/inco@latest
 
       - name: Release
         run: |
@@ -324,7 +324,7 @@ This gives you a clean separation: `inco` branch holds the `.inco.go` sources wi
 ## Build from Source
 
 ```bash
-go install github.com/imnive-design/inco-go/cmd/inco@latest
+go install github.com/incogno-design/inco/cmd/inco@latest
 ```
 
 ```bash

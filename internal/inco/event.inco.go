@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imnive-design/inco-go/internal/fsutil"
+	"github.com/incogno-design/inco/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------

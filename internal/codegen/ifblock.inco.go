@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/directive"
+	"github.com/incogno-design/inco/internal/directive"
 )
 
 // ---------------------------------------------------------------------------

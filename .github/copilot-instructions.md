@@ -143,7 +143,7 @@ _ = err // @inco: err == nil, -panic(err)
 ## Install
 
 ```bash
-go install github.com/imnive-design/inco-go/cmd/inco@latest
+go install github.com/incogno-design/inco/cmd/inco@latest
 ```
 
 ## Common Commands

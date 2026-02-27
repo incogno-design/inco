@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/directive"
+	"github.com/incogno-design/inco/internal/directive"
 )
 
 // GenerateShadow produces the shadow file content for a source file.

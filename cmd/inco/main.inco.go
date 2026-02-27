@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imnive-design/inco-go/internal/analysis"
-	inco "github.com/imnive-design/inco-go/internal/inco"
-	"github.com/imnive-design/inco-go/internal/release"
+	"github.com/incogno-design/inco/internal/analysis"
+	inco "github.com/incogno-design/inco/internal/inco"
+	"github.com/incogno-design/inco/internal/release"
 )
 
 const usage = `inco — incognito assertions for Go.
