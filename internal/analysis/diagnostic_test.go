@@ -310,3 +310,96 @@ func TestDiagnoseJSON_Nonexistent(t *testing.T) {
 		t.Error("expected error for nonexistent file")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Invalid Directive Syntax Tests
+// ---------------------------------------------------------------------------
+
+// TestDiagnoseFile_InvalidDirectiveStarting tests that directives starting
+// with @inco: or @if: but with invalid syntax are reported as errors.
+func TestDiagnoseFile_InvalidDirectiveStarting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	// Comment starts with @inco: but is missing the expression part (invalid syntax)
+	writeFile(t, path, `package main
+
+func foo() {
+	// @inco:
+}
+`)
+
+	diags, err := DiagnoseFile(dir, path)
+	if err != nil {
+		t.Fatalf("DiagnoseFile: %v", err)
+	}
+
+	var found bool
+	for _, d := range diags {
+		if d.Code == "invalid-directive" {
+			found = true
+			if d.Severity != DiagWarning {
+				t.Errorf("invalid-directive severity = %d, want %d (warning)", d.Severity, DiagWarning)
+			}
+			if !strings.Contains(d.Message, "invalid directive syntax") {
+				t.Errorf("message should mention invalid syntax: %q", d.Message)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'invalid-directive' diagnostic for @inco: with no expression")
+	}
+}
+
+// TestDiagnoseFile_DirectiveInDocumentation tests that comments containing
+// @inco: or @if: in the middle (for documentation) are NOT reported as errors.
+func TestDiagnoseFile_DirectiveInDocumentation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	// These comments mention directives but don't start with them
+	// (they're documentation/explanation, not actual directive attempts)
+	writeFile(t, path, `package main
+
+// Look for attempts at @inco: or @if: that don't parse.
+// Recognized prefixes: @inco: (contract) and @if: (guard).
+// Examples: @inco: x > 0, @if: err != nil, -return
+
+func foo() {
+}
+`)
+
+	diags, err := DiagnoseFile(dir, path)
+	if err != nil {
+		t.Fatalf("DiagnoseFile: %v", err)
+	}
+
+	// Should NOT have invalid-directive errors for documentation comments
+	for _, d := range diags {
+		if d.Code == "invalid-directive" {
+			t.Errorf("should not report invalid-directive for documentation comments: %s", d.Message)
+		}
+	}
+}
+
+// TestDiagnoseFile_ValidDirective tests that valid directives do not produce errors.
+func TestDiagnoseFile_ValidDirective(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	writeFile(t, path, `package main
+
+func foo() {
+	x := 5
+	_ = x // @inco: x > 0, -panic("x must be positive")
+}
+`)
+
+	diags, err := DiagnoseFile(dir, path)
+	if err != nil {
+		t.Fatalf("DiagnoseFile: %v", err)
+	}
+
+	for _, d := range diags {
+		if d.Code == "invalid-directive" {
+			t.Errorf("valid directive should not produce invalid-directive error: %s", d.Message)
+		}
+	}
+}

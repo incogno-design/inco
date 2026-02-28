@@ -218,11 +218,17 @@ func DiagnoseFile(root, path string) ([]Diagnostic, error) {
 	}
 
 	// 3. Check for invalid directive syntax in comments.
+	// Only flag comments that *start with* a directive (not just contain it somewhere).
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
 			text := c.Text
-			// Look for attempts at @inco: or @if: that don't parse.
-			if (strings.Contains(text, "@inco:") || strings.Contains(text, "@if:")) &&
+			// Strip comment delimiters to get the body
+			body := strings.TrimSpace(text)
+			body = strings.TrimPrefix(body, "//")
+			body = strings.TrimSpace(body)
+
+			// Only check if comment *starts* with @inco: or @if:
+			if (strings.HasPrefix(body, "@inco:") || strings.HasPrefix(body, "@if:")) &&
 				directive.ParseDirective(text) == nil {
 				line := fset.Position(c.Pos()).Line
 				col := fset.Position(c.Pos()).Column - 1
