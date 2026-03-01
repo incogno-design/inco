@@ -19,6 +19,7 @@ func MarshalBytes(v interface{}) ([]byte, error) {
 	result, err := json.Marshal(v)
 	_ = err // @inco: err == nil, -log("json.Marshal error:", v)
 	_ = err // @inco: err == nil, -return(nil, err)
+
 	return result, nil
 }
 
@@ -27,5 +28,6 @@ func UnmarshalBytes[T interface{}](data []byte) (T, error) {
 	err := json.Unmarshal(data, &v)
 	_ = err // @inco: err == nil, -log("json.Unmarshal error:", string(data))
 	_ = err // @inco: err == nil, -return(v, err)
+
 	return v, nil
 }

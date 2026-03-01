@@ -7,6 +7,7 @@ import "fmt"
 func ProcessWithCallback(db *DB) {
 	handler := func(u *User) {
 		// @inco: u != nil
+
 		fmt.Println(u.Name)
 	}
 
@@ -19,8 +20,10 @@ func ProcessWithCallback(db *DB) {
 func FindUser(db *DB, id string) (*User, error) {
 	// @inco: db != nil, -panic("db is nil")
 	// @inco: len(id) > 0, -panic(fmt.Sprintf("invalid id: %q", id))
+
 	user, err := db.Query("SELECT * FROM users WHERE id = ?")
 	_ = err // @inco: err == nil, -return(nil, err)
+
 	return user, nil
 }
 
@@ -38,6 +41,7 @@ func MultiCheck(a, b int, name string) {
 
 func SafeDivide(a, b int) (int, error) {
 	// @inco: b != 0, -return(0, fmt.Errorf("division by zero"))
+
 	return a / b, nil
 }
 
@@ -46,6 +50,7 @@ func SafeDivide(a, b int) (int, error) {
 func PrintPositive(nums []int) {
 	for _, n := range nums {
 		// @inco: n > 0, -continue
+
 		fmt.Println(n)
 	}
 }
@@ -55,6 +60,7 @@ func PrintPositive(nums []int) {
 func FindFirst(nums []int, target int) int {
 	for i, n := range nums {
 		_ = n // @inco: n != target, -break
+
 		_ = i
 	}
 	return -1
@@ -66,6 +72,7 @@ func NestedClosure() {
 	outer := func() {
 		inner := func(x int) {
 			// @inco: x > 0
+
 			fmt.Println(x)
 		}
 		inner(1)
@@ -77,6 +84,7 @@ func NestedClosure() {
 
 func Guard(x int) {
 	// @inco: x >= 0, -return
+
 	fmt.Println(x)
 }
 
@@ -86,6 +94,7 @@ func SafeSlice(s []int, start, end int) []int {
 	// @inco: start >= 0
 	// @inco: end <= len(s)
 	// @inco: start <= end, -return(nil)
+
 	return s[start:end]
 }
 
@@ -94,6 +103,7 @@ func SafeSlice(s []int, start, end int) []int {
 func ProcessOrder(orderID string, amount int) {
 	// @inco: orderID != "", -log("empty order ID received")
 	// @inco: amount > 0, -log("invalid amount:", amount)
+
 	fmt.Printf("processing order %s for %d\n", orderID, amount)
 }
 
@@ -102,6 +112,7 @@ func ProcessOrder(orderID string, amount int) {
 func MustConnect(addr string) {
 	_ = addr // @inco: addr != "", -log("addr is empty, about to panic")
 	_ = addr // @inco: addr != "", -panic("addr must not be empty")
+
 	fmt.Println("connecting to", addr)
 }
 
@@ -112,5 +123,6 @@ type myErr struct{ Msg string }
 func CheckLocal() string {
 	errors := myErr{Msg: "boom"}
 	// @inco: errors.Msg != "", -panic("empty msg")
+
 	return errors.Msg
 }

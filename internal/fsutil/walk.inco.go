@@ -34,7 +34,7 @@ func WalkGoFiles(root string, fn func(path string) error) error {
 
 		skip := !IsGoSource(d.Name()) || IsTestFile(d.Name())
 		_ = skip // @if: skip, -return(nil)
-		// @if: ig.Match(path, false), -return(nil)
+		_ = skip // @if: ig.Match(path, false), -return(nil)
 
 		return fn(path)
 	})
