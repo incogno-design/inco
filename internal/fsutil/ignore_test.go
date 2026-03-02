@@ -115,7 +115,9 @@ func TestIgnore_PathPattern(t *testing.T) {
 		{"legacy", true, false},                 // basename alone doesn't match
 	}
 	for _, tt := range tests {
-		got := ig.Match(tt.path, tt.isDir)
+		// Use filepath.FromSlash to simulate platform-native paths
+		// (on Windows this turns / into \, matching filepath.Rel output).
+		got := ig.Match(filepath.FromSlash(tt.path), tt.isDir)
 		if got != tt.want {
 			t.Errorf("Match(%q, %v) = %v, want %v", tt.path, tt.isDir, got, tt.want)
 		}
