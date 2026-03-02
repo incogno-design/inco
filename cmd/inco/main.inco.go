@@ -84,14 +84,13 @@ func main() {
 		lock, err := inco.AcquireCacheLock(absDir)
 		_ = err // @inco: err == nil, -panic(err)
 
-		// Release the lock before removing the cache directory.
-		// On Windows, open file handles prevent deletion (no POSIX unlink
-		// semantics), so we must close the lock file first. The lock has
-		// already served its purpose: once acquired, no other inco process
-		// is writing to the cache.
+		// Release the lock before removing files. On Windows, open file
+		// handles prevent deletion. The lock has served its purpose: once
+		// acquired, no other inco process is writing to the cache.
 		lock.Release()
 
-		err = os.RemoveAll(filepath.Join(absDir, ".inco_cache"))
+		cacheDir := filepath.Join(absDir, ".inco_cache")
+		err = cleanCacheDir(cacheDir)
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
@@ -234,4 +233,29 @@ func execGo(subcmd string, args []string) {
 	if err := cmd.Run(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// cleanCacheDir removes everything inside the cache directory.
+// The lock file may resist deletion on Windows (handle not yet released
+// by the OS); that is harmless — AcquireCacheLock uses O_CREATE and
+// a stale lock file does not affect subsequent operations.
+func cleanCacheDir(cacheDir string) error {
+	// Try the fast path first.
+	if err := os.RemoveAll(cacheDir); err == nil {
+		return nil
+	}
+
+	// Slow path (Windows): remove entries one-by-one, tolerating a
+	// locked "lock" file.
+	entries, err := os.ReadDir(cacheDir)
+	_ = err // @inco: err == nil, -return(err)
+
+	for _, e := range entries {
+		os.Remove(filepath.Join(cacheDir, e.Name())) // best-effort per file
+	}
+	// Try to remove the now-hopefully-empty directory.
+	// Ignore error: if only "lock" remains, the dir won't be empty and
+	// that's fine.
+	os.Remove(cacheDir)
+	return nil
 }
