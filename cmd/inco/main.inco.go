@@ -84,8 +84,14 @@ func main() {
 		lock, err := inco.AcquireCacheLock(absDir)
 		_ = err // @inco: err == nil, -panic(err)
 
-		err = os.RemoveAll(filepath.Join(absDir, ".inco_cache"))
+		// Release the lock before removing the cache directory.
+		// On Windows, open file handles prevent deletion (no POSIX unlink
+		// semantics), so we must close the lock file first. The lock has
+		// already served its purpose: once acquired, no other inco process
+		// is writing to the cache.
 		lock.Release()
+
+		err = os.RemoveAll(filepath.Join(absDir, ".inco_cache"))
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
