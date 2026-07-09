@@ -29,9 +29,7 @@ type Engine struct {
 	importMap  map[string]string // lazily built: package name → import path
 	importOnce sync.Once
 
-	mu       sync.Mutex // protects manifest and Overlay during a run
-	manifest *Manifest  // cached manifest (loaded by Init)
-	inited   bool       // true after Init completes
+	manifest *Manifest // cached manifest, loaded at the start of Run
 }
 
 // NewEngine creates an engine rooted at the given directory.
@@ -45,13 +43,12 @@ func NewEngine(root string) *Engine {
 }
 
 // ---------------------------------------------------------------------------
-// Init — load cached state
+// loadState — load cached state
 // ---------------------------------------------------------------------------
 
-// initLocked loads cached state (manifest, overlay) from disk and validates
-// shadow file integrity. Caller must hold e.mu. Reached via ensureInit,
-// which is called automatically by Run.
-func (e *Engine) initLocked() error {
+// loadState loads the cached manifest + overlay from disk and drops entries
+// whose shadow files have gone missing. Called once at the start of Run.
+func (e *Engine) loadState() {
 	e.manifest = e.loadManifest()
 	// Ensure manifest.Files is never nil (loadManifest may return nil map
 	// when running without overlay and the manifest file doesn't exist).
@@ -72,16 +69,6 @@ func (e *Engine) initLocked() error {
 	}
 
 	cleanTempFiles(filepath.Join(e.Root, ".inco_cache"))
-	e.inited = true
-	return nil
-}
-
-func (e *Engine) ensureInit() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	// @if: e.inited, -return
-
-	e.initLocked()
 }
 
 // ---------------------------------------------------------------------------
@@ -114,34 +101,22 @@ func (e *Engine) Run() error {
 
 	defer lock.Release()
 
-	e.ensureInit()
+	e.loadState()
 
-	oldOverlay, manifestSnap := e.snapshotForRun()
+	// Hand the loaded overlay/manifest to the workers as read-only inputs,
+	// then reset the live overlay so this run rebuilds it from scratch.
+	// Neither map is mutated until after the workers join (wg.Wait), so
+	// passing them by reference (not copying) is safe.
+	oldOverlay := e.Overlay.Replace
+	manifestSnap := e.manifest.Files
+	e.Overlay.Replace = make(map[string]string)
+
 	paths := fsutil.CollectGoFiles(e.Root)
 
 	results, err := e.processFilesParallel(paths, oldOverlay, manifestSnap)
 	_ = err // @inco: err == nil, -return(err)
 
 	return e.commitResults(results, oldOverlay)
-}
-
-// snapshotForRun copies the current overlay and manifest state for use
-// by parallel workers, then clears the overlay for fresh batch generation.
-// Must be called under no contention (before workers start).
-func (e *Engine) snapshotForRun() (oldOverlay map[string]string, manifestSnap map[string]ManifestEntry) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	oldOverlay = make(map[string]string, len(e.Overlay.Replace))
-	for k, v := range e.Overlay.Replace {
-		oldOverlay[k] = v
-	}
-	manifestSnap = make(map[string]ManifestEntry, len(e.manifest.Files))
-	for k, v := range e.manifest.Files {
-		manifestSnap[k] = v
-	}
-	e.Overlay.Replace = make(map[string]string)
-	return
 }
 
 // processFilesParallel generates shadow files for all paths using a
@@ -245,9 +220,7 @@ func (e *Engine) commitResults(results []fileResult, oldOverlay map[string]strin
 		}
 	}
 
-	e.mu.Lock()
 	e.manifest = newManifest
-	e.mu.Unlock()
 
 	err := e.writeOverlay()
 	_ = err // @inco: err == nil, -return(err)
