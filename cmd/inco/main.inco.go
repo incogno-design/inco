@@ -23,7 +23,6 @@ Usage:
   inco release [--dry-run] [dir]       Copy guards into source tree
   inco release clean [dir] Remove released files and restore originals
   inco clean [dir]         Remove .inco_cache
-  inco watch [dir]         Watch for changes and regenerate incrementally
   inco diagnose [file]     Print LSP-compatible diagnostics as JSON
 
 If [dir] is omitted, the current directory is used.
@@ -80,7 +79,7 @@ func main() {
 		absDir, err := filepath.Abs(dir)
 		_ = err // @inco: err == nil, -panic(err)
 
-		// Acquire lock so watch/gen can't write while we delete.
+		// Acquire lock so a concurrent gen can't write while we delete.
 		lock, err := inco.AcquireCacheLock(absDir)
 		_ = err // @inco: err == nil, -panic(err)
 
@@ -89,8 +88,6 @@ func main() {
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
-	case "watch":
-		runWatch(getDir(2))
 	case "diagnose":
 		runDiagnose()
 	default:

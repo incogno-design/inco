@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/incogno-design/inco/internal/codegen"
 	"github.com/incogno-design/inco/internal/fsutil"
@@ -30,11 +29,9 @@ type Engine struct {
 	importMap  map[string]string // lazily built: package name → import path
 	importOnce sync.Once
 
-	mu       sync.Mutex // protects manifest and Overlay during incremental ops
+	mu       sync.Mutex // protects manifest and Overlay during a run
 	manifest *Manifest  // cached manifest (loaded by Init)
 	inited   bool       // true after Init completes
-
-	flushTimer *time.Timer // used by ScheduleFlush; nil when no flush pending
 }
 
 // NewEngine creates an engine rooted at the given directory.
@@ -51,17 +48,9 @@ func NewEngine(root string) *Engine {
 // Init — load cached state
 // ---------------------------------------------------------------------------
 
-// Init loads cached state (manifest, overlay) from disk and validates
-// shadow file integrity. Safe to call multiple times (no-op after first).
-// Called automatically by Run and GenFile.
-func (e *Engine) Init() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	// @if: e.inited, -return(nil)
-
-	return e.initLocked()
-}
-
+// initLocked loads cached state (manifest, overlay) from disk and validates
+// shadow file integrity. Caller must hold e.mu. Reached via ensureInit,
+// which is called automatically by Run.
 func (e *Engine) initLocked() error {
 	e.manifest = e.loadManifest()
 	// Ensure manifest.Files is never nil (loadManifest may return nil map
@@ -93,123 +82,6 @@ func (e *Engine) ensureInit() {
 	// @if: e.inited, -return
 
 	e.initLocked()
-}
-
-// ---------------------------------------------------------------------------
-// GenFile / CommitFile / Flush — single-file incremental API
-// ---------------------------------------------------------------------------
-
-// GenFileResult holds the output of single-file shadow generation.
-type GenFileResult struct {
-	Path       string // absolute source file path
-	SrcHash    string // SHA-256 hex of source content
-	ShadowData []byte // generated shadow content
-}
-
-// GenFile processes a single source file and returns its shadow content.
-// Returns (nil, nil) when the file is unchanged (cache hit).
-// Panics from @inco: guards (when running without overlay) are recovered
-// and returned as errors.
-func (e *Engine) GenFile(path string) (result *GenFileResult, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			result = nil
-			err = fmt.Errorf("GenFile: %v", r)
-		}
-	}()
-
-	e.ensureInit()
-
-	absPath, err := filepath.Abs(path)
-	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: abs: %w", err))
-
-	srcHash, err := hashFile(absPath)
-	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("GenFile: hash: %w", err))
-
-	// Check cache.
-	e.mu.Lock()
-	if entry, ok := e.manifest.Files[absPath]; ok && entry.SrcHash == srcHash {
-		if _, serr := os.Stat(entry.ShadowPath); serr == nil {
-			e.mu.Unlock()
-			return nil, nil // unchanged
-		}
-	}
-	e.mu.Unlock()
-
-	// Parse — accept partial AST for degraded mode.
-	fset := token.NewFileSet()
-	f, parseErr := parser.ParseFile(fset, absPath, nil, parser.ParseComments)
-	_ = parseErr
-	_ = f // @inco: f != nil, -return(nil, fmt.Errorf("GenFile: unparseable %s: %w", absPath, parseErr))
-
-	shadow := codegen.GenerateShadow(absPath, f, fset, e.Root, e.buildImportMap())
-	return &GenFileResult{
-		Path:       absPath,
-		SrcHash:    srcHash,
-		ShadowData: shadow,
-	}, nil
-}
-
-// CommitFile writes the shadow file to .inco_cache and updates the
-// in-memory overlay and manifest. Call Flush to persist to disk.
-func (e *Engine) CommitFile(r *GenFileResult) error {
-	// @inco: r != nil, -return(fmt.Errorf("CommitFile: nil result"))
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// Remove old shadow if it exists.
-	if old, ok := e.Overlay.Replace[r.Path]; ok {
-		os.Remove(old)
-	}
-
-	err := e.writeShadow(r.Path, r.ShadowData)
-	_ = err // @inco: err == nil, -return(err)
-
-	// Update manifest.
-	if sp, ok := e.Overlay.Replace[r.Path]; ok {
-		e.manifest.Files[r.Path] = ManifestEntry{SrcHash: r.SrcHash, ShadowPath: sp}
-	}
-
-	return nil
-}
-
-// Flush persists the current overlay and manifest to disk atomically.
-// Acquires the cache lock to serialize with other inco processes.
-func (e *Engine) Flush() error {
-	// Acquire cache lock — blocks until any concurrent inco process releases.
-	lock, err := AcquireCacheLock(e.Root)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: lock: %w", err))
-
-	defer lock.Release()
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	cacheDir := filepath.Join(e.Root, ".inco_cache")
-	err = os.MkdirAll(cacheDir, 0o755)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: mkdir: %w", err))
-
-	data, err := json.MarshalIndent(e.Overlay, "", "  ")
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal overlay: %w", err))
-
-	err = atomicWriteFile(filepath.Join(cacheDir, "overlay.json"), data, 0o644)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write overlay: %w", err))
-	// @if: e.manifest == nil, -return(nil)
-
-	data, err = json.MarshalIndent(e.manifest, "", "  ")
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: marshal manifest: %w", err))
-
-	err = atomicWriteFile(filepath.Join(cacheDir, "manifest.json"), data, 0o644)
-	_ = err // @inco: err == nil, -return(fmt.Errorf("Flush: write manifest: %w", err))
-
-	return nil
-}
-
-// Close flushes pending state to disk. Call when the engine is no longer
-// needed (e.g. IDE shutdown).
-func (e *Engine) Close() error {
-	return e.Flush()
 }
 
 // ---------------------------------------------------------------------------

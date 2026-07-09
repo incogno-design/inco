@@ -87,7 +87,7 @@ func (e *Engine) buildImportMap() map[string]string {
 // collectPackages runs "go list" with the given patterns and records
 // each name → importPath pair in e.importMap.
 // Plain if checks are used for bounds-safety because this function is
-// called during GenFile which must work without overlay (go test).
+// called during gen, which must work without overlay (go test).
 func (e *Engine) collectPackages(ambiguous map[string]bool, patterns ...string) {
 	args := append([]string{"list", "-f", "{{.Name}} {{.ImportPath}}"}, patterns...)
 	cmd := exec.Command("go", args...)
