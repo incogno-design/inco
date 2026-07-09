@@ -46,13 +46,10 @@ func LoadIgnore(dir string) *IgnoreList {
 		if dirOnly {
 			line = strings.TrimSuffix(line, "/")
 		}
-		// Normalize slashes for the current OS so patterns match
-		// filepath.Rel output (which uses os-native separators).
-		line = filepath.FromSlash(line)
 		patterns = append(patterns, ignorePattern{
 			pattern:  line,
 			dirOnly:  dirOnly,
-			hasSlash: strings.ContainsRune(line, filepath.Separator),
+			hasSlash: strings.Contains(line, "/"),
 		})
 	}
 	// @if: len(patterns) == 0, -return(nil)
@@ -79,7 +76,7 @@ func (ig *IgnoreList) Match(relPath string, isDir bool) bool {
 			}
 			// Also match as a prefix (anything under that directory).
 			// @if: isDir && relPath == p.pattern, -return(true)
-			// @if: strings.HasPrefix(relPath, p.pattern+string(filepath.Separator)), -return(true)
+			// @if: strings.HasPrefix(relPath, p.pattern+"/"), -return(true)
 		} else {
 			// Pattern without /: match against basename only.
 			if matched, _ := filepath.Match(p.pattern, base); matched {

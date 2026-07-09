@@ -58,7 +58,7 @@ func buildPanicBody(d *directive.Directive, path string, line int, logPkgName, r
 		}
 		relPath := path
 		if rel, err := filepath.Rel(root, path); err == nil {
-			relPath = filepath.ToSlash(rel)
+			relPath = rel
 		}
 		msg := fmt.Sprintf("inco violation: %s (at %s:%d)", d.Expr, relPath, line)
 		return fmt.Sprintf("panic(%q)", msg)

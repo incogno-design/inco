@@ -118,7 +118,7 @@ func collectIgnored(root string, out *[]string) {
 			// @if: !ig.Match(path, true), -return(nil)
 
 			rel, _ := filepath.Rel(root, path)
-			*out = append(*out, filepath.ToSlash(rel)+"/")
+			*out = append(*out, rel+"/")
 			return filepath.SkipDir
 		}
 		isSourceFile := fsutil.IsGoSource(d.Name()) && !fsutil.IsTestFile(d.Name())
