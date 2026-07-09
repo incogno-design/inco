@@ -2,6 +2,7 @@ package inco
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"go/parser"
@@ -149,11 +150,12 @@ func (e *Engine) processFilesParallel(
 			fset := token.NewFileSet()
 			for idx := range ch {
 				path := paths[idx]
-				srcHash, err := hashFile(path)
+				src, err := os.ReadFile(path)
 				if err != nil {
-					workerErr.CompareAndSwap(nil, err)
+					workerErr.CompareAndSwap(nil, fmt.Errorf("read %s: %w", path, err))
 					return
 				}
+				srcHash := hashBytes(src)
 
 				// Cache hit: source unchanged & shadow exists → reuse.
 				if prev, ok := manifestSnap[path]; ok && prev.SrcHash == srcHash {
@@ -171,14 +173,14 @@ func (e *Engine) processFilesParallel(
 					os.Remove(old)
 				}
 
-				f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+				f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
 				if err != nil {
 					workerErr.CompareAndSwap(nil, fmt.Errorf("parse %s: %w", path, err))
 					return
 				}
 				results[idx] = fileResult{
 					Path: path, SrcHash: srcHash,
-					ShadowData: codegen.GenerateShadow(path, f, fset, e.Root, e.buildImportMap()),
+					ShadowData: codegen.GenerateShadow(path, src, f, fset, e.Root, e.buildImportMap()),
 				}
 			}
 		}()
@@ -320,11 +322,8 @@ func (e *Engine) writeManifest(m *Manifest) error {
 	return nil
 }
 
-// hashFile returns the hex-encoded SHA-256 of a file's contents.
-func hashFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	_ = err // @inco: err == nil, -return("", fmt.Errorf("hashFile %s: %w", path, err))
-
+// hashBytes returns the hex-encoded SHA-256 of the given content.
+func hashBytes(data []byte) string {
 	h := sha256.Sum256(data)
-	return fmt.Sprintf("%x", h), nil
+	return hex.EncodeToString(h[:])
 }

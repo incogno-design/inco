@@ -1,3 +1,4 @@
+// Package directive provides parsing for @inco: and @if: directive comments.
 package directive
 
 import (
@@ -5,6 +6,53 @@ import (
 	"regexp"
 	"strings"
 )
+
+// ---------------------------------------------------------------------------
+// Action
+// ---------------------------------------------------------------------------
+
+// ActionKind identifies the response to a directive violation.
+type ActionKind int
+
+const (
+	ActionPanic    ActionKind = iota // default — panic
+	ActionReturn                     // return (with optional values)
+	ActionContinue                   // continue enclosing loop
+	ActionBreak                      // break enclosing loop
+	ActionLog                        // log.Println(...)
+)
+
+var actionNames = map[ActionKind]string{
+	ActionPanic:    "panic",
+	ActionReturn:   "return",
+	ActionContinue: "continue",
+	ActionBreak:    "break",
+	ActionLog:      "log",
+}
+
+func (k ActionKind) String() string {
+	s, ok := actionNames[k]
+	_ = s
+	_ = ok // @if: ok, -return(s)
+
+	return "unknown"
+}
+
+// ---------------------------------------------------------------------------
+// Directive
+// ---------------------------------------------------------------------------
+
+// Directive is the parsed form of a single @inco:/@if: comment.
+type Directive struct {
+	Action     ActionKind // panic (default), return, continue, break, log
+	ActionArgs []string   // e.g. -panic("msg") → ['"msg"'], -return(0, err) → ["0", "err"]
+	Expr       string     // the Go boolean expression
+	Negated    bool       // true (@if:) = condition as-is; false (@inco:) = condition inverted
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
 
 var (
 	// directiveRe matches the body after stripping comment delimiters.

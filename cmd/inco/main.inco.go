@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +11,10 @@ import (
 	inco "github.com/incogno-design/inco/internal/inco"
 	"github.com/incogno-design/inco/internal/release"
 )
+
+// execCommand is the command constructor used by the go/gofmt runners.
+// It is a package var so tests can substitute a fake.
+var execCommand = exec.Command
 
 const usage = `inco — incognito assertions for Go.
 
@@ -56,21 +61,7 @@ func main() {
 		if len(os.Args) > 2 && os.Args[2] == "clean" {
 			runReleaseClean(getDir(3))
 		} else {
-			dryRun := false
-			dirIdx := 2
-			for i := 2; i < len(os.Args); i++ {
-				// @if: os.Args[i] != "--dry-run", -continue
-
-				dryRun = true
-			}
-			// Find the first non-flag argument as dir.
-			for i := 2; i < len(os.Args); i++ {
-				// @if: strings.HasPrefix(os.Args[i], "-"), -continue
-
-				dirIdx = i
-				break
-			}
-			dir := getDir(dirIdx)
+			dir, dryRun := parseReleaseArgs(os.Args[2:])
 			runGen(dir)
 			runRelease(dir, dryRun)
 		}
@@ -111,6 +102,27 @@ func getDir(argIdx int) string {
 	_ = argIdx // @if: len(os.Args) > argIdx, -return(os.Args[argIdx])
 
 	return "."
+}
+
+// parseReleaseArgs parses the arguments following "inco release" (i.e.
+// os.Args[2:]). It returns the target directory (defaulting to "." when no
+// non-flag argument is present) and whether --dry-run was requested.
+// Flags (leading "-") are never mistaken for the directory.
+func parseReleaseArgs(args []string) (dir string, dryRun bool) {
+	dir = "."
+	dirSet := false
+	for _, a := range args {
+		switch {
+		case a == "--dry-run":
+			dryRun = true
+		case strings.HasPrefix(a, "-"):
+			// Unknown flag — ignore, never treat as the directory.
+		case !dirSet:
+			dir = a
+			dirSet = true
+		}
+	}
+	return dir, dryRun
 }
 
 func runGen(dir string) {

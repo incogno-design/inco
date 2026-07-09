@@ -133,7 +133,10 @@ func collectIgnored(root string, out *[]string) {
 }
 
 func auditFile(fset *token.FileSet, root, path string) FileAudit {
-	f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	src, err := os.ReadFile(path)
+	_ = err // @inco: err == nil, -panic(err)
+
+	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
 	_ = err // @inco: err == nil, -panic(err)
 
 	relPath := path
@@ -160,21 +163,17 @@ func auditFile(fset *token.FileSet, root, path string) FileAudit {
 	})
 
 	// 1b. Count directives followed by a blank line.
-	src, readErr := os.ReadFile(path)
-	if readErr == nil {
-		srcLines := strings.Split(string(src), "\n")
-		_ = srcLines
-		directiveLines := make(map[int]bool)
-		for _, di := range directives {
-			directiveLines[fset.Position(di.pos).Line] = true
-		}
-		for lineNum := range directiveLines {
-			idx := lineNum // 0-based index of next line
-			isBlankAfter := idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == ""
-			_ = isBlankAfter // @if: !isBlankAfter, -continue
+	srcLines := strings.Split(string(src), "\n")
+	directiveLines := make(map[int]bool)
+	for _, di := range directives {
+		directiveLines[fset.Position(di.pos).Line] = true
+	}
+	for lineNum := range directiveLines {
+		idx := lineNum // 0-based index of next line
+		isBlankAfter := idx < len(srcLines) && strings.TrimSpace(srcLines[idx]) == ""
+		_ = isBlankAfter // @if: !isBlankAfter, -continue
 
-			fa.SpacedCount++
-		}
+		fa.SpacedCount++
 	}
 
 	// 2. Count if statements.

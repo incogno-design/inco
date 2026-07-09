@@ -60,17 +60,9 @@ func addMissingImports(content string, origFile *ast.File, directives map[int]*d
 	imported := make(map[string]bool)
 	importedPaths := make(map[string]string) // name → import path
 	for _, imp := range origFile.Imports {
-		path := strings.Trim(imp.Path.Value, `"`)
-		// Use local name if aliased, otherwise last segment.
-		var name string
-		if imp.Name != nil {
-			name = imp.Name.Name
-		} else {
-			parts := strings.Split(path, "/")
-			name = parts[len(parts)-1]
-		}
+		name := importShortName(imp)
 		imported[name] = true
-		importedPaths[name] = path
+		importedPaths[name] = strings.Trim(imp.Path.Value, `"`)
 	}
 
 	// 3. Find which needed packages are missing.
@@ -147,6 +139,17 @@ func safeAddImports(fset *token.FileSet, f *ast.File, toAdd []string,
 // ---------------------------------------------------------------------------
 // AST helpers (import-related)
 // ---------------------------------------------------------------------------
+
+// importShortName returns the local name an import is referenced by: the
+// alias when present, otherwise the last path segment.
+func importShortName(imp *ast.ImportSpec) string {
+	if imp.Name != nil {
+		return imp.Name.Name
+	}
+	path := strings.Trim(imp.Path.Value, `"`)
+	parts := strings.Split(path, "/")
+	return parts[len(parts)-1]
+}
 
 // collectDeclaredNames returns names of all variables, parameters, receivers,
 // constants, and types declared in the file. These must not be mistaken for

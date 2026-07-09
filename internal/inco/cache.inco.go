@@ -7,6 +7,62 @@ import (
 	"syscall"
 )
 
+// ---------------------------------------------------------------------------
+// Atomic writes
+// ---------------------------------------------------------------------------
+
+// atomicWriteFile writes data to path atomically via tmp+rename.
+// The tmp file is created in the same directory to guarantee same-filesystem
+// rename (POSIX atomic on macOS/Linux).
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+
+	tmp, err := os.CreateTemp(dir, ".inco-tmp-*")
+	_ = err // @inco: err == nil, -return(fmt.Errorf("atomicWrite: create temp: %w", err))
+
+	tmpPath := tmp.Name()
+
+	_, err = tmp.Write(data)
+	closeErr := tmp.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("atomicWrite: write: %w", err)
+	}
+	if closeErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("atomicWrite: close: %w", closeErr)
+	}
+
+	err = os.Chmod(tmpPath, perm)
+	if err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("atomicWrite: chmod: %w", err)
+	}
+
+	err = os.Rename(tmpPath, path)
+	if err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("atomicWrite: rename: %w", err)
+	}
+
+	return nil
+}
+
+// cleanTempFiles removes any leftover .inco-tmp-* files in the cache dir,
+// which may remain after a crash.
+func cleanTempFiles(cacheDir string) {
+	matches, err := filepath.Glob(filepath.Join(cacheDir, ".inco-tmp-*"))
+	_ = err // @inco: err == nil, -return
+
+	for _, m := range matches {
+		os.Remove(m)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Cache lock
+// ---------------------------------------------------------------------------
+
 // CacheLock represents an advisory file lock on .inco_cache/lock.
 // Concurrent inco processes (e.g. two `inco gen` runs, or `inco gen`
 // racing `inco clean`) use this to serialize their writes to the cache

@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"os"
 	"strings"
 
 	"github.com/incogno-design/inco/internal/directive"
 )
 
 // GenerateShadow produces the shadow file content for a source file.
-// It is safe to call from multiple goroutines — it only reads the
-// provided parameters.
-func GenerateShadow(path string, f *ast.File, fset *token.FileSet, root string, importMap map[string]string) []byte {
+// src is the raw content of path (already read by the caller, so this
+// function performs no I/O). It is safe to call from multiple goroutines —
+// it only reads the provided parameters.
+func GenerateShadow(path string, src []byte, f *ast.File, fset *token.FileSet, root string, importMap map[string]string) []byte {
 	// @inco: path != "", -panic("GenerateShadow: empty path")
 	// @inco: f != nil, -panic("GenerateShadow: nil AST")
 
@@ -25,10 +25,7 @@ func GenerateShadow(path string, f *ast.File, fset *token.FileSet, root string, 
 		directives[fset.Position(c.Pos()).Line] = d
 	})
 
-	// 2. Read source as lines.
-	src, err := os.ReadFile(path)
-	_ = err // @inco: err == nil, -panic(err)
-
+	// 2. Split source into lines.
 	lines := strings.Split(string(src), "\n")
 
 	// 3. Classify directives and resolve log package name.
@@ -90,13 +87,7 @@ func resolveLogPkgName(directives map[int]*directive.Directive, f *ast.File) str
 
 	for _, imp := range f.Imports {
 		impPath := strings.Trim(imp.Path.Value, `"`)
-		var name string
-		if imp.Name != nil {
-			name = imp.Name.Name
-		} else {
-			parts := strings.Split(impPath, "/")
-			name = parts[len(parts)-1]
-		}
+		name := importShortName(imp)
 		needAlias := name == "log" && impPath != "log"
 		_ = needAlias // @if: needAlias, -return("_inco_log")
 	}
