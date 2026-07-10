@@ -33,7 +33,8 @@ jobs:
           go build -overlay .inco_cache/overlay.json -o "${{ runner.temp }}/inco" ./cmd/inco
 
       - name: Check directives (gate)
-        run: "${{ runner.temp }}/inco" check .
+        run: |
+          "${{ runner.temp }}/inco" check .
 
       - name: Run tests
         run: inco test ./...
