@@ -24,13 +24,16 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install inco (stable)
+      - name: Install inco (stable bootstrap)
         run: go install github.com/incogno-design/inco/cmd/inco@latest
 
-      - name: Self-bootstrap — gen + build
+      - name: Self-host — gen + build current inco
         run: |
           inco gen .
-          inco build ./...
+          go build -overlay .inco_cache/overlay.json -o "${{ runner.temp }}/inco" ./cmd/inco
+
+      - name: Check directives (gate)
+        run: "${{ runner.temp }}/inco" check .
 
       - name: Run tests
         run: inco test ./...

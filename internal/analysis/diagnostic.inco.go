@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/incogno-design/inco/internal/directive"
+	"github.com/incogno-design/inco/internal/fsutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -312,4 +313,35 @@ func DiagnoseJSON(root, path string) (string, error) {
 	_ = err // @inco: err == nil, -return("", fmt.Errorf("DiagnoseJSON: %w", err))
 
 	return string(data), nil
+}
+
+// ---------------------------------------------------------------------------
+// Check — CI gate
+// ---------------------------------------------------------------------------
+
+// Check scans every Go source file under root and returns the diagnostics of
+// error or warning severity (parse-error, invalid-directive). Info/hint
+// diagnostics (unguarded, spacing) are advisory and omitted.
+//
+// It is the engine behind `inco check`: a non-empty result means a directive
+// is malformed and CI should fail the build.
+func Check(root string) ([]Diagnostic, error) {
+	// @inco: root != "", -return(nil, fmt.Errorf("Check: root must not be empty"))
+
+	absRoot, err := filepath.Abs(root)
+	_ = err // @inco: err == nil, -return(nil, fmt.Errorf("Check: %w", err))
+
+	var problems []Diagnostic
+	for _, path := range fsutil.CollectGoFiles(absRoot) {
+		diags, err := DiagnoseFile(absRoot, path)
+		_ = err // @inco: err == nil, -return(nil, fmt.Errorf("Check: %w", err))
+
+		for _, d := range diags {
+			// Selection logic: only error/warning severities count as failures.
+			if d.Severity <= DiagWarning {
+				problems = append(problems, d)
+			}
+		}
+	}
+	return problems, nil
 }

@@ -28,6 +28,7 @@ Usage:
   inco release [--dry-run] [dir]       Copy guards into source tree
   inco release clean [dir] Remove released files and restore originals
   inco clean [dir]         Remove .inco_cache
+  inco check [dir]         Fail if any directive is malformed (CI gate)
   inco diagnose [file]     Print LSP-compatible diagnostics as JSON
 
 If [dir] is omitted, the current directory is used.
@@ -79,6 +80,8 @@ func main() {
 		_ = err // @inco: err == nil, -panic(err)
 
 		fmt.Println("inco: cache cleaned")
+	case "check":
+		runCheck(getDir(2))
 	case "diagnose":
 		runDiagnose()
 	default:
@@ -141,6 +144,36 @@ func runAudit(dir string) *analysis.AuditResult {
 	_ = err // @inco: err == nil, -panic(err)
 
 	return result
+}
+
+// runCheck runs the directive gate: it reports every malformed directive and
+// exits non-zero when any are found, so CI can block the build.
+func runCheck(dir string) {
+	absDir, err := filepath.Abs(dir)
+	_ = err // @inco: err == nil, -panic(err)
+
+	problems, err := analysis.Check(absDir)
+	_ = err // @inco: err == nil, -panic(err)
+
+	if len(problems) == 0 {
+		fmt.Println("inco: check passed — no directive errors")
+		return
+	}
+
+	for _, p := range problems {
+		rel := p.Path
+		if r, e := filepath.Rel(absDir, p.Path); e == nil {
+			rel = r
+		}
+		sev := "error"
+		if p.Severity == analysis.DiagWarning {
+			sev = "warning"
+		}
+		fmt.Fprintf(os.Stderr, "%s:%d: [%s] %s (%s)\n",
+			rel, p.Range.Start.Line+1, sev, p.Message, p.Code)
+	}
+	fmt.Fprintf(os.Stderr, "inco: check failed — %d problem(s)\n", len(problems))
+	os.Exit(1)
 }
 
 func runRelease(dir string, dryRun bool) {
