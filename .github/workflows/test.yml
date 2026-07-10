@@ -25,7 +25,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Install inco (stable bootstrap)
-        run: go install github.com/incogno-design/inco/cmd/inco@latest
+        # Pinned to a known-good released version — bootstrapping only needs a
+        # working inco to gen+build the current source. Avoids @latest breaking
+        # CI if a bad tag is ever published.
+        run: go install github.com/incogno-design/inco/cmd/inco@v0.1.3
 
       - name: Self-host — gen + build current inco
         run: |
